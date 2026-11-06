@@ -184,3 +184,4 @@ describe('5. Gemini Fallback Resilience', () => {
     expect(interpretation.confidence).toBeGreaterThan(0);
   });
 });
+

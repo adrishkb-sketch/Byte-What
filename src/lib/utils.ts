@@ -8,3 +8,4 @@ export function cn(...inputs: ClassValue[]) {
 export function formatPercentage(val: number): string {
   return `${Math.round(val)}%`;
 }
+

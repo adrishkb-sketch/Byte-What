@@ -13,7 +13,7 @@ import {
   ChevronRight,
   MessageSquare,
 } from 'lucide-react';
-import { getOrCreateAnonymousSessionId, clearAnonymousSessionId } from '@/lib/session';
+import { getOrCreateAnonymousSessionId, clearAnonymousSessionId, getStudentInfo } from '@/lib/session';
 import { Question, QuestionType } from '@/types';
 import { LIKERT_OPTIONS } from '@/data/questions';
 
@@ -136,6 +136,25 @@ export default function QuestionnairePage() {
 
       const json = await res.json();
       if (json.success) {
+        // Auto-create/upsert ByteMates profile if student info is present
+        const studentInfo = getStudentInfo();
+        if (studentInfo && studentInfo.name) {
+          const topDomains = json.data.primaryInterests.map((p: any) => p.domainId);
+          await fetch('/api/bytemates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              anonymousSessionId: targetSessionId,
+              displayName: studentInfo.name,
+              bio: `${studentInfo.year} • ${studentInfo.department}`,
+              discoverable: true,
+              primaryDomains: topDomains,
+              secondaryDomains: json.data.secondaryInterests.map((s: any) => s.domainId),
+              skills: [],
+            }),
+          }).catch(() => {});
+        }
+
         router.push(`/discover/results?sessionId=${targetSessionId}`);
       } else {
         setErrorMsg(json.error || 'Failed to calculate results');
@@ -373,3 +392,4 @@ export default function QuestionnairePage() {
     </div>
   );
 }
+

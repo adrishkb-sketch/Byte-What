@@ -110,6 +110,11 @@ export interface StudentProfile {
   id: string;
   anonymousSessionId: string;
   displayName: string;
+  name?: string;
+  department?: string;
+  year?: string;
+  phoneNumber?: string;
+  pathChosen?: 'self_selected' | 'questionnaire';
   bio?: string;
   discoverable: boolean;
   primaryDomains: DomainId[];
@@ -139,3 +144,4 @@ export interface SkillItem {
   category: string;
   domains: DomainId[];
 }
+

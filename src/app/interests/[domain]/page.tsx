@@ -295,3 +295,4 @@ export default function DomainDetailPage({ params }: PageProps) {
     </div>
   );
 }
+

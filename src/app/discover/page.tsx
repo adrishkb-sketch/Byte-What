@@ -18,11 +18,11 @@ export default function DiscoverOverviewPage() {
         </p>
         <div className="mt-8 flex justify-center">
           <Link
-            href="/discover/questionnaire"
+            href="/onboarding"
             className="px-7 py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-primary to-accent-violet hover:from-primary-hover hover:to-accent-violet/90 shadow-lg shadow-primary/25 transition-all flex items-center gap-2"
           >
             <Sparkles className="w-5 h-5 text-cyan-300" />
-            <span>Start Questionnaire</span>
+            <span>Tell What Interests You</span>
           </Link>
         </div>
       </div>
@@ -80,3 +80,4 @@ export default function DiscoverOverviewPage() {
     </div>
   );
 }
+

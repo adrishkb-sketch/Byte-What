@@ -8,3 +8,4 @@ export async function GET() {
     data: ALL_QUESTIONS,
   });
 }
+

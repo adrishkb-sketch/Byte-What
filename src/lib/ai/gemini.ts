@@ -200,3 +200,4 @@ Do not output markdown codeblocks. Return valid JSON only.`;
     return getFallbackExplanation(topDomains, domainScores);
   }
 }
+

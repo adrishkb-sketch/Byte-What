@@ -13,3 +13,4 @@ export const supabaseServer = isServerSupabaseConfigured
       },
     })
   : null;
+

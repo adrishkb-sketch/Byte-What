@@ -48,3 +48,4 @@ export const AiExplanationSchema = z.object({
 
 export type AiInterpretation = z.infer<typeof AiInterpretationSchema>;
 export type AiExplanation = z.infer<typeof AiExplanationSchema>;
+

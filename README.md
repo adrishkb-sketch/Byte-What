@@ -116,3 +116,4 @@ npm test
 2. Import the repository in [Vercel](https://vercel.com).
 3. Set the environment variables (`GEMINI_API_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, etc.).
 4. Deploy!
+

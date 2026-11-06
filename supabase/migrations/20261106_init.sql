@@ -192,3 +192,4 @@ CREATE POLICY "Public read for discoverable profiles" ON student_public_profiles
 -- 2. Restrict Direct Public Access to Raw Responses
 -- Anonymous users insert via server-side service role endpoints
 -- Privileged service_role has full access by default in Supabase.
+

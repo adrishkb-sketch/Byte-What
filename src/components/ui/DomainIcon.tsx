@@ -55,3 +55,4 @@ export const DomainIcon: React.FC<DomainIconProps> = ({ name, ...props }) => {
   const IconComponent = ICON_MAP[name] || HelpCircle;
   return <IconComponent {...props} />;
 };
+

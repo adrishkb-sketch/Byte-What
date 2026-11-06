@@ -161,3 +161,4 @@ export function getComplementarityScore(domainA: DomainId, domainB: DomainId): n
   const scoreBA = COMPLEMENTARITY_MATRIX[domainB]?.[domainA];
   return scoreAB ?? scoreBA ?? 0.4; // baseline moderate affinity
 }
+

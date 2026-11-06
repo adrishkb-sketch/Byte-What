@@ -40,3 +40,4 @@ INSERT INTO project_domains (project_id, domain_id) VALUES
 ('b3c8fa10-2101-44ab-89cd-8812c3e12003', 'machine_learning'),
 ('b3c8fa10-2101-44ab-89cd-8812c3e12003', 'cs_research')
 ON CONFLICT (project_id, domain_id) DO NOTHING;
+

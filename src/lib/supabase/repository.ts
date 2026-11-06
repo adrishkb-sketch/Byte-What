@@ -429,6 +429,26 @@ export const Repository = {
         { month: 'Oct', completions: 138 },
         { month: 'Nov', completions: 165 },
       ],
+      departmentComparison: [
+        { domain: 'Software Eng', CSE: 82, IT: 76, Ceramics: 42 },
+        { domain: 'Artificial Intel', CSE: 79, IT: 71, Ceramics: 48 },
+        { domain: 'Machine Learning', CSE: 72, IT: 66, Ceramics: 55 },
+        { domain: 'Robotics & IoT', CSE: 46, IT: 41, Ceramics: 78 },
+        { domain: 'Electronics/VLSI', CSE: 39, IT: 32, Ceramics: 72 },
+        { domain: 'Cybersecurity', CSE: 62, IT: 68, Ceramics: 28 },
+      ],
+      yearProgression: [
+        { year: '1st Year', web: 84, ai: 72, systems: 32, research: 18 },
+        { year: '2nd Year', web: 88, ai: 78, systems: 46, research: 28 },
+        { year: '3rd Year', web: 76, ai: 86, systems: 64, research: 52 },
+        { year: '4th Year', web: 65, ai: 84, systems: 76, research: 66 },
+      ],
+      scoreDistribution: [
+        { range: '0–39% (Exploratory)', students: 42, color: '#64748B' },
+        { range: '40–59% (Developing)', students: 118, color: '#3B82F6' },
+        { range: '60–79% (Strong Affinity)', students: 264, color: '#8B5CF6' },
+        { range: '80–100% (Core Passion)', students: 195, color: '#06B6D4' },
+      ],
     };
   },
 };

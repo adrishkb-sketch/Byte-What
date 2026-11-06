@@ -704,3 +704,4 @@ export const DOMAINS: Domain[] = [
 ];
 
 export const DOMAIN_MAP = new Map<DomainId, Domain>(DOMAINS.map((d) => [d.id, d]));
+

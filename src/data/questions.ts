@@ -635,3 +635,4 @@ export const DOMAIN_QUESTIONS: Question[] = DOMAIN_QUESTIONS_RAW.flatMap((entry)
 export const ALL_QUESTIONS: Question[] = [...UNIVERSAL_QUESTIONS, ...DOMAIN_QUESTIONS];
 
 export const QUESTION_MAP = new Map<string, Question>(ALL_QUESTIONS.map((q) => [q.id, q]));
+

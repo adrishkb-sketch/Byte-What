@@ -7,3 +7,4 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Let's create seed.sql
 console.log('Generating seed.sql...');
+

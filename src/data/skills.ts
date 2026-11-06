@@ -56,3 +56,4 @@ export const SKILLS_DATABASE: SkillItem[] = [
 export function getSkillsForDomain(domainId: DomainId): SkillItem[] {
   return SKILLS_DATABASE.filter((s) => s.domains.includes(domainId));
 }
+
