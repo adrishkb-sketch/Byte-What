@@ -154,6 +154,18 @@ CREATE TABLE IF NOT EXISTS analytics_snapshots (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 15. Student Submissions Table (Real student registrations & category rankings)
+CREATE TABLE IF NOT EXISTS student_submissions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  department TEXT NOT NULL,
+  year TEXT NOT NULL,
+  phone_number TEXT NOT NULL,
+  path_chosen TEXT NOT NULL CHECK (path_chosen IN ('self_selected', 'questionnaire')),
+  rankings JSONB NOT NULL DEFAULT '[]'::jsonb, -- Array of { domainId: string, rank: number }
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Create Indexes for Fast Performance
 CREATE INDEX IF NOT EXISTS idx_questions_domain ON questions(primary_domain_id);
 CREATE INDEX IF NOT EXISTS idx_responses_session ON questionnaire_responses(session_id);
@@ -161,6 +173,8 @@ CREATE INDEX IF NOT EXISTS idx_results_session ON interest_results(session_id);
 CREATE INDEX IF NOT EXISTS idx_results_domain ON interest_results(domain_id);
 CREATE INDEX IF NOT EXISTS idx_profiles_discoverable ON student_public_profiles(discoverable);
 CREATE INDEX IF NOT EXISTS idx_project_domains_domain ON project_domains(domain_id);
+CREATE INDEX IF NOT EXISTS idx_student_submissions_department ON student_submissions(department);
+CREATE INDEX IF NOT EXISTS idx_student_submissions_year ON student_submissions(year);
 
 -- ROW LEVEL SECURITY (RLS) POLICIES
 ALTER TABLE domains ENABLE ROW LEVEL SECURITY;
@@ -177,6 +191,7 @@ ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_domains ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_applications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE analytics_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE student_submissions ENABLE ROW LEVEL SECURITY;
 
 -- 1. Public Read Policies
 CREATE POLICY "Public read for domains" ON domains FOR SELECT USING (true);
@@ -188,6 +203,8 @@ CREATE POLICY "Public read for analytics" ON analytics_snapshots FOR SELECT USIN
 CREATE POLICY "Public read for projects" ON projects FOR SELECT USING (true);
 CREATE POLICY "Public read for project domains" ON project_domains FOR SELECT USING (true);
 CREATE POLICY "Public read for discoverable profiles" ON student_public_profiles FOR SELECT USING (discoverable = true);
+CREATE POLICY "Public read for student submissions" ON student_submissions FOR SELECT USING (true);
+CREATE POLICY "Public insert for student submissions" ON student_submissions FOR INSERT WITH CHECK (true);
 
 -- 2. Restrict Direct Public Access to Raw Responses
 -- Anonymous users insert via server-side service role endpoints

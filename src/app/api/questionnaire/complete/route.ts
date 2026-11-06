@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     }
 
     const sessionData = await Repository.upsertSession(sessionId, responses.length, 'completed');
-    const startedAt = sessionData?.started_at || new Date().toISOString();
+    const startedAt = (sessionData as any)?.startedAt || (sessionData as any)?.started_at || new Date().toISOString();
 
     // 1. Calculate deterministic scores
     const results = generateQuestionnaireResults(sessionId, startedAt, responses);

@@ -1,6 +1,5 @@
 import React from 'react';
 import Link from 'next/link';
-import { ShieldCheck } from 'lucide-react';
 
 export const Footer: React.FC = () => {
   return (
@@ -11,13 +10,10 @@ export const Footer: React.FC = () => {
             BW
           </div>
           <span className="text-white font-semibold">BYTE WHAT</span>
-          <span>• GCECT Technology Platform</span>
+          <span>• Government College of Engineering and Ceramic Technology</span>
         </div>
 
         <div className="flex items-center gap-6">
-          <Link href="/bytemates" className="hover:text-white transition-colors">
-            ByteMates
-          </Link>
           <Link href="/analytics" className="hover:text-white transition-colors">
             Analytics
           </Link>

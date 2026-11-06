@@ -1,141 +1,180 @@
 import { supabaseServer, isServerSupabaseConfigured } from './server';
-import { DomainId, QuestionnaireResultSummary, StudentProfile, Project, UserResponse } from '@/types';
+import {
+  DomainId,
+  QuestionnaireResultSummary,
+  StudentSubmission,
+  StudentDomainRank,
+  UserResponse,
+} from '@/types';
 import { DOMAINS } from '@/data/domains';
 
-// In-memory data store for fallback when Supabase keys are not set
 interface MemoryStore {
   sessions: Map<string, { id: string; anonymousSessionId: string; status: string; questionsAnswered: number; startedAt: string; completedAt?: string }>;
   responses: Map<string, UserResponse[]>;
   results: Map<string, QuestionnaireResultSummary>;
-  profiles: Map<string, StudentProfile>;
-  projects: Map<string, Project>;
+  submissions: Map<string, StudentSubmission>;
+  projects: Map<string, any>;
 }
 
+// Clean in-memory store with NO fake demo profiles
 const memoryStore: MemoryStore = {
   sessions: new Map(),
   responses: new Map(),
   results: new Map(),
-  profiles: new Map([
-    [
-      'prof-1',
-      {
-        id: 'prof-1',
-        anonymousSessionId: 'anon-gcect-101',
-        displayName: 'CeramicCoder',
-        bio: '3rd year CSE student interested in building high-concurrency systems and robotics.',
-        discoverable: true,
-        primaryDomains: ['software_web', 'robotics_iot', 'cloud_devops'],
-        secondaryDomains: ['cybersecurity', 'networks_systems'],
-        skills: ['TypeScript', 'Node.js', 'Arduino', 'Docker'],
-        createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-      },
-    ],
-    [
-      'prof-2',
-      {
-        id: 'prof-2',
-        anonymousSessionId: 'anon-gcect-102',
-        displayName: 'PixelAlchemist',
-        bio: 'Information Technology sophomore passionate about UI/UX design and 3D web experiences.',
-        discoverable: true,
-        primaryDomains: ['ui_ux_design', 'graphic_3d_design', 'ar_vr_xr'],
-        secondaryDomains: ['software_web', 'game_development'],
-        skills: ['Figma', 'Blender', 'Three.js', 'Tailwind CSS'],
-        createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-      },
-    ],
-    [
-      'prof-3',
-      {
-        id: 'prof-3',
-        anonymousSessionId: 'anon-gcect-103',
-        displayName: 'QuantTensor',
-        bio: 'Ceramic Technology student applying neural networks to materials testing and financial modeling.',
-        discoverable: true,
-        primaryDomains: ['artificial_intelligence', 'machine_learning', 'fintech_quant'],
-        secondaryDomains: ['data_science', 'cs_research'],
-        skills: ['Python', 'PyTorch', 'Pandas', 'SQL'],
-        createdAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-      },
-    ],
-  ]),
-  projects: new Map([
-    [
-      'proj-1',
-      {
-        id: 'proj-1',
-        title: 'Autonomous Campus Solar Rover',
-        description: 'Building an ESP32 and ROS2 based miniature rover for automated soil and ambient temperature telemetry around GCECT grounds.',
-        creatorPseudonym: 'CeramicCoder',
-        domains: ['robotics_iot', 'electronics_vlsi', 'artificial_intelligence'],
-        skillRequirements: ['C/C++', 'ROS2', 'ESP32', 'Sensors'],
-        difficulty: 'Intermediate',
-        status: 'Open',
-        teamRequirements: 'Looking for 1 hardware enthusiast and 1 ROS programmer.',
-        createdAt: new Date(Date.now() - 86400000 * 4).toISOString(),
-        updatedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-      },
-    ],
-    [
-      'proj-2',
-      {
-        id: 'proj-2',
-        title: 'GCECT Virtual 3D Ceramic Museum (WebXR)',
-        description: 'An interactive browser-based 3D gallery rendering scanned traditional and modern ceramic glazes with realistic PBR shaders.',
-        creatorPseudonym: 'PixelAlchemist',
-        domains: ['ar_vr_xr', 'graphic_3d_design', 'ui_ux_design', 'software_web'],
-        skillRequirements: ['Three.js', 'Blender', 'Next.js', 'WebXR'],
-        difficulty: 'Intermediate',
-        status: 'Open',
-        teamRequirements: 'Need someone familiar with GLSL shaders and responsive web design.',
-        createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-    ],
-    [
-      'proj-3',
-      {
-        id: 'proj-3',
-        title: 'Ceramic Fracture Stress Predictor',
-        description: 'Predicting fracture points of ceramic tiles under thermal shocks using physics-guided neural networks.',
-        creatorPseudonym: 'QuantTensor',
-        domains: ['machine_learning', 'cs_research', 'data_science'],
-        skillRequirements: ['PyTorch', 'NumPy', 'Pandas'],
-        difficulty: 'Advanced',
-        status: 'In Progress',
-        teamRequirements: 'Collaborating on dataset preparation and model validation.',
-        createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
-        updatedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-      },
-    ],
-  ]),
+  submissions: new Map(),
+  projects: new Map(),
 };
 
 export const Repository = {
   /**
+   * Save or update a student submission with domain priority rankings
+   */
+  async saveStudentSubmission(data: {
+    name: string;
+    department: string;
+    year: string;
+    phoneNumber: string;
+    pathChosen: 'self_selected' | 'questionnaire';
+    rankings: StudentDomainRank[];
+  }): Promise<StudentSubmission> {
+    const submissionId = `sub-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const submission: StudentSubmission = {
+      id: submissionId,
+      name: data.name,
+      department: data.department,
+      year: data.year,
+      phoneNumber: data.phoneNumber,
+      pathChosen: data.pathChosen,
+      rankings: data.rankings,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (isServerSupabaseConfigured && supabaseServer) {
+      try {
+        const { data: inserted, error } = await supabaseServer
+          .from('student_submissions')
+          .insert({
+            name: submission.name,
+            department: submission.department,
+            year: submission.year,
+            phone_number: submission.phoneNumber,
+            path_chosen: submission.pathChosen,
+            rankings: submission.rankings,
+            created_at: submission.createdAt,
+          })
+          .select()
+          .single();
+
+        if (error) {
+          console.error('Supabase error inserting student_submission:', error);
+        } else if (inserted) {
+          submission.id = inserted.id;
+        }
+      } catch (err) {
+        console.error('Supabase saveStudentSubmission exception:', err);
+      }
+    }
+
+    memoryStore.submissions.set(submission.id, submission);
+    return submission;
+  },
+
+  /**
+   * Get student submissions filtered by domain, department, and year.
+   * If a domain is specified, sorts students by their preference rank for that domain (rank 1 at top!).
+   */
+  async getStudentSubmissions(filters?: {
+    domainId?: DomainId;
+    department?: string;
+    year?: string;
+    searchQuery?: string;
+  }): Promise<(StudentSubmission & { targetDomainRank?: number })[]> {
+    let list: StudentSubmission[] = [];
+
+    if (isServerSupabaseConfigured && supabaseServer) {
+      try {
+        let query = supabaseServer
+          .from('student_submissions')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (filters?.department && filters.department !== 'All') {
+          query = query.eq('department', filters.department);
+        }
+        if (filters?.year && filters.year !== 'All') {
+          query = query.eq('year', filters.year);
+        }
+
+        const { data, error } = await query;
+        if (!error && data) {
+          list = data.map((row: any) => ({
+            id: row.id,
+            name: row.name,
+            department: row.department,
+            year: row.year,
+            phoneNumber: row.phone_number,
+            pathChosen: row.path_chosen,
+            rankings: row.rankings || [],
+            createdAt: row.created_at,
+          }));
+        }
+      } catch (err) {
+        console.error('Supabase getStudentSubmissions exception:', err);
+      }
+    }
+
+    // If Supabase returned no rows or is not configured, use memory store
+    if (list.length === 0) {
+      list = Array.from(memoryStore.submissions.values());
+    }
+
+    // Apply filters
+    if (filters?.department && filters.department !== 'All') {
+      list = list.filter((s) => s.department === filters.department);
+    }
+    if (filters?.year && filters.year !== 'All') {
+      list = list.filter((s) => s.year === filters.year);
+    }
+    if (filters?.searchQuery) {
+      const q = filters.searchQuery.toLowerCase();
+      list = list.filter((s) => s.name.toLowerCase().includes(q) || s.department.toLowerCase().includes(q));
+    }
+
+    // If filtering by domain: only include students who selected this domain,
+    // and sort them with the highest priority (lowest rank number: 1, 2, ...) at the top!
+    if (filters?.domainId) {
+      const filteredWithRank: (StudentSubmission & { targetDomainRank?: number })[] = [];
+
+      for (const student of list) {
+        const found = student.rankings.find((r) => r.domainId === filters.domainId);
+        if (found) {
+          filteredWithRank.push({
+            ...student,
+            targetDomainRank: found.rank,
+          });
+        }
+      }
+
+      // Sort by rank ascending (1 is highest priority), tie-broken by date
+      filteredWithRank.sort((a, b) => {
+        const rankA = a.targetDomainRank ?? 999;
+        const rankB = b.targetDomainRank ?? 999;
+        if (rankA !== rankB) {
+          return rankA - rankB;
+        }
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+
+      return filteredWithRank;
+    }
+
+    return list;
+  },
+
+  /**
    * Save or update an anonymous session
    */
   async upsertSession(anonymousSessionId: string, questionsAnswered: number, status: 'in_progress' | 'completed' = 'in_progress') {
-    if (isServerSupabaseConfigured && supabaseServer) {
-      const { data, error } = await supabaseServer
-        .from('questionnaire_sessions')
-        .upsert(
-          {
-            anonymous_session_id: anonymousSessionId,
-            questions_answered: questionsAnswered,
-            status,
-            completed_at: status === 'completed' ? new Date().toISOString() : null,
-          },
-          { onConflict: 'anonymous_session_id' }
-        )
-        .select()
-        .single();
-
-      if (error) console.error('Supabase upsertSession error:', error);
-      return data;
-    }
-
-    // Memory fallback
     let session = memoryStore.sessions.get(anonymousSessionId);
     if (!session) {
       session = {
@@ -158,30 +197,6 @@ export const Repository = {
    * Store individual question response
    */
   async saveResponse(anonymousSessionId: string, response: UserResponse) {
-    if (isServerSupabaseConfigured && supabaseServer) {
-      // Get session UUID
-      const { data: sess } = await supabaseServer
-        .from('questionnaire_sessions')
-        .select('id')
-        .eq('anonymous_session_id', anonymousSessionId)
-        .single();
-
-      if (sess) {
-        await supabaseServer.from('questionnaire_responses').upsert(
-          {
-            session_id: sess.id,
-            question_id: response.questionId,
-            selected_option_id: response.selectedOptionId || null,
-            numeric_value: response.numericValue ?? null,
-            text_response: response.textResponse || null,
-            answered_at: response.timestamp,
-          },
-          { onConflict: 'session_id,question_id' }
-        );
-      }
-    }
-
-    // Memory fallback
     const list = memoryStore.responses.get(anonymousSessionId) || [];
     const filtered = list.filter((r) => r.questionId !== response.questionId);
     filtered.push(response);
@@ -192,31 +207,6 @@ export const Repository = {
    * Get all responses for an anonymous session
    */
   async getResponses(anonymousSessionId: string): Promise<UserResponse[]> {
-    if (isServerSupabaseConfigured && supabaseServer) {
-      const { data: sess } = await supabaseServer
-        .from('questionnaire_sessions')
-        .select('id')
-        .eq('anonymous_session_id', anonymousSessionId)
-        .single();
-
-      if (sess) {
-        const { data: rows } = await supabaseServer
-          .from('questionnaire_responses')
-          .select('*')
-          .eq('session_id', sess.id);
-
-        if (rows) {
-          return rows.map((r: any) => ({
-            questionId: r.question_id,
-            selectedOptionId: r.selected_option_id,
-            numericValue: r.numeric_value,
-            textResponse: r.text_response,
-            timestamp: r.answered_at,
-          }));
-        }
-      }
-    }
-
     return memoryStore.responses.get(anonymousSessionId) || [];
   },
 
@@ -224,28 +214,6 @@ export const Repository = {
    * Save calculated questionnaire results
    */
   async saveResults(summary: QuestionnaireResultSummary) {
-    if (isServerSupabaseConfigured && supabaseServer) {
-      const { data: sess } = await supabaseServer
-        .from('questionnaire_sessions')
-        .select('id')
-        .eq('anonymous_session_id', summary.sessionId)
-        .single();
-
-      if (sess) {
-        const rows = summary.allDomainScores.map((score) => ({
-          session_id: sess.id,
-          domain_id: score.domainId,
-          interest_score: score.interestScore,
-          confidence_score: score.confidenceScore,
-          evidence_count: score.evidenceCount,
-          classification: score.classification,
-          calculated_at: summary.completedAt,
-        }));
-
-        await supabaseServer.from('interest_results').upsert(rows, { onConflict: 'session_id,domain_id' });
-      }
-    }
-
     memoryStore.results.set(summary.sessionId, summary);
   },
 
@@ -257,198 +225,68 @@ export const Repository = {
   },
 
   /**
-   * ByteMates: Get discoverable student profiles
+   * Projects helper
    */
-  async getDiscoverableProfiles(): Promise<StudentProfile[]> {
-    if (isServerSupabaseConfigured && supabaseServer) {
-      const { data, error } = await supabaseServer
-        .from('student_public_profiles')
-        .select('*')
-        .eq('discoverable', true)
-        .order('created_at', { ascending: false });
-
-      if (data && !error && data.length > 0) {
-        return data.map((d: any) => ({
-          id: d.id,
-          anonymousSessionId: d.anonymous_session_id,
-          displayName: d.display_name,
-          bio: d.bio,
-          discoverable: d.discoverable,
-          primaryDomains: d.primary_domains || [],
-          secondaryDomains: d.secondary_domains || [],
-          skills: d.skills || [],
-          createdAt: d.created_at,
-        }));
-      }
-    }
-
-    return Array.from(memoryStore.profiles.values());
-  },
-
-  /**
-   * Create or update student public pseudonymous profile
-   */
-  async upsertProfile(profile: Omit<StudentProfile, 'id' | 'createdAt'>): Promise<StudentProfile> {
-    const existing = Array.from(memoryStore.profiles.values()).find(
-      (p) => p.anonymousSessionId === profile.anonymousSessionId
-    );
-
-    const fullProfile: StudentProfile = {
-      id: existing ? existing.id : `prof-${Date.now()}`,
-      ...profile,
-      createdAt: existing ? existing.createdAt : new Date().toISOString(),
-    };
-
-    memoryStore.profiles.set(fullProfile.id, fullProfile);
-    return fullProfile;
-  },
-
-  /**
-   * Get all public projects
-   */
-  async getProjects(): Promise<Project[]> {
-    if (isServerSupabaseConfigured && supabaseServer) {
-      const { data, error } = await supabaseServer
-        .from('projects')
-        .select('*, project_domains(domain_id)')
-        .order('created_at', { ascending: false });
-
-      if (data && !error && data.length > 0) {
-        return data.map((p: any) => ({
-          id: p.id,
-          title: p.title,
-          description: p.description,
-          creatorPseudonym: p.creator_pseudonym,
-          creatorSessionId: p.creator_session_id,
-          domains: p.project_domains ? p.project_domains.map((pd: any) => pd.domain_id) : [],
-          skillRequirements: p.skill_requirements || [],
-          difficulty: p.difficulty,
-          status: p.status,
-          teamRequirements: p.team_requirements,
-          createdAt: p.created_at,
-          updatedAt: p.updated_at,
-        }));
-      }
-    }
-
+  async getProjects() {
     return Array.from(memoryStore.projects.values());
   },
 
-  /**
-   * Create a new project
-   */
-  async createProject(project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<Project> {
-    const newProject: Project = {
-      ...project,
-      id: `proj-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    memoryStore.projects.set(newProject.id, newProject);
-    return newProject;
+  async createProject(project: any) {
+    const id = `proj-${Date.now()}`;
+    const item = { id, ...project, createdAt: new Date().toISOString() };
+    memoryStore.projects.set(id, item);
+    return item;
   },
 
   /**
-   * Aggregate Community Analytics
+   * Pure real-data analytics aggregated from actual student submissions
    */
   async getAnalytics() {
-    const submissionsCount = memoryStore.sessions.size || 142; // baseline historical count for GCECT
-    const profilesCount = memoryStore.profiles.size;
-    const projectsCount = memoryStore.projects.size;
+    const allSubmissions = await this.getStudentSubmissions();
 
-    // Aggregate domain interest frequencies
-    const domainCounts: Record<DomainId, number> = {} as any;
+    // Frequency count and top-choice count for all 20 domains
+    const domainCounts: Record<DomainId, { totalSelected: number; topRanked: number }> = {} as any;
     DOMAINS.forEach((d) => {
-      domainCounts[d.id] = 0;
+      domainCounts[d.id] = { totalSelected: 0, topRanked: 0 };
     });
 
-    // Populate frequencies from memory store results
-    for (const res of Array.from(memoryStore.results.values())) {
-      res.primaryInterests.forEach((pi) => {
-        domainCounts[pi.domainId] = (domainCounts[pi.domainId] || 0) + 3;
-      });
-      res.secondaryInterests.forEach((si) => {
-        domainCounts[si.domainId] = (domainCounts[si.domainId] || 0) + 1;
-      });
-    }
+    const departmentCounts: Record<string, number> = {};
+    const yearCounts: Record<string, number> = {};
 
-    // Seed realistic distribution for GCECT departments (Ceramics, IT, CSE)
-    const baseFrequencies: Record<DomainId, number> = {
-      software_web: 88,
-      artificial_intelligence: 82,
-      machine_learning: 76,
-      robotics_iot: 64,
-      electronics_vlsi: 58,
-      cybersecurity: 52,
-      data_science: 49,
-      cloud_devops: 47,
-      ui_ux_design: 43,
-      competitive_programming: 41,
-      game_development: 38,
-      cs_research: 34,
-      networks_systems: 32,
-      fintech_quant: 29,
-      ar_vr_xr: 27,
-      bioinformatics_healthtech: 24,
-      blockchain_web3: 22,
-      graphic_3d_design: 21,
-      mobile_development: 36,
-      entrepreneurship: 26,
-    };
+    allSubmissions.forEach((sub) => {
+      departmentCounts[sub.department] = (departmentCounts[sub.department] || 0) + 1;
+      yearCounts[sub.year] = (yearCounts[sub.year] || 0) + 1;
+
+      sub.rankings.forEach((r) => {
+        if (domainCounts[r.domainId]) {
+          domainCounts[r.domainId].totalSelected += 1;
+          if (r.rank === 1) {
+            domainCounts[r.domainId].topRanked += 1;
+          }
+        }
+      });
+    });
+
+    const totalStudents = allSubmissions.length;
 
     const domainRankings = DOMAINS.map((domain) => {
-      const dynamicCount = domainCounts[domain.id] || 0;
-      const totalCount = baseFrequencies[domain.id] + dynamicCount;
+      const stats = domainCounts[domain.id] || { totalSelected: 0, topRanked: 0 };
+      const percentage = totalStudents > 0 ? Math.round((stats.totalSelected / totalStudents) * 100) : 0;
       return {
         id: domain.id,
         name: domain.name,
         category: domain.category,
-        count: totalCount,
-        percentage: Math.round((totalCount / (submissionsCount + 350)) * 100),
+        count: stats.totalSelected,
+        topRankedCount: stats.topRanked,
+        percentage,
       };
     }).sort((a, b) => b.count - a.count);
 
     return {
-      totalSubmissions: submissionsCount + 312,
-      activeProjects: projectsCount,
-      discoverableMates: profilesCount,
+      totalSubmissions: totalStudents,
+      departmentBreakdown: departmentCounts,
+      yearBreakdown: yearCounts,
       domainRankings,
-      topCombinations: [
-        { domains: ['software_web', 'artificial_intelligence'], label: 'Full-Stack AI Systems', count: 68 },
-        { domains: ['robotics_iot', 'electronics_vlsi'], label: 'Physical Computing & Hardware', count: 47 },
-        { domains: ['machine_learning', 'data_science'], label: 'Data Intelligence', count: 42 },
-        { domains: ['ui_ux_design', 'graphic_3d_design'], label: 'Digital Product Design', count: 31 },
-        { domains: ['cybersecurity', 'networks_systems'], label: 'Systems & Security Engineering', count: 29 },
-      ],
-      completionTrend: [
-        { month: 'Jun', completions: 42 },
-        { month: 'Jul', completions: 67 },
-        { month: 'Aug', completions: 89 },
-        { month: 'Sep', completions: 114 },
-        { month: 'Oct', completions: 138 },
-        { month: 'Nov', completions: 165 },
-      ],
-      departmentComparison: [
-        { domain: 'Software Eng', CSE: 82, IT: 76, Ceramics: 42 },
-        { domain: 'Artificial Intel', CSE: 79, IT: 71, Ceramics: 48 },
-        { domain: 'Machine Learning', CSE: 72, IT: 66, Ceramics: 55 },
-        { domain: 'Robotics & IoT', CSE: 46, IT: 41, Ceramics: 78 },
-        { domain: 'Electronics/VLSI', CSE: 39, IT: 32, Ceramics: 72 },
-        { domain: 'Cybersecurity', CSE: 62, IT: 68, Ceramics: 28 },
-      ],
-      yearProgression: [
-        { year: '1st Year', web: 84, ai: 72, systems: 32, research: 18 },
-        { year: '2nd Year', web: 88, ai: 78, systems: 46, research: 28 },
-        { year: '3rd Year', web: 76, ai: 86, systems: 64, research: 52 },
-        { year: '4th Year', web: 65, ai: 84, systems: 76, research: 66 },
-      ],
-      scoreDistribution: [
-        { range: '0–39% (Exploratory)', students: 42, color: '#64748B' },
-        { range: '40–59% (Developing)', students: 118, color: '#3B82F6' },
-        { range: '60–79% (Strong Affinity)', students: 264, color: '#8B5CF6' },
-        { range: '80–100% (Core Passion)', students: 195, color: '#06B6D4' },
-      ],
     };
   },
 };

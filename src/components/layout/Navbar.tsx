@@ -3,11 +3,10 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Menu, X, Users, BarChart2, Sparkles } from 'lucide-react';
+import { Menu, X, BarChart2, Sparkles, Home } from 'lucide-react';
 
 const NAV_LINKS = [
-  { href: '/', label: 'Home' },
-  { href: '/bytemates', label: 'ByteMates', icon: Users },
+  { href: '/', label: 'Home', icon: Home },
   { href: '/analytics', label: 'Analytics', icon: BarChart2 },
 ];
 
@@ -33,7 +32,7 @@ export const Navbar: React.FC = () => {
           </div>
         </Link>
 
-        {/* Desktop Navigation - strictly Home, ByteMates, Analytics */}
+        {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center gap-2">
           {NAV_LINKS.map((link) => {
             const isActive = pathname === link.href;

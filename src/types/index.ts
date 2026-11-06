@@ -106,6 +106,22 @@ export interface QuestionnaireResultSummary {
   crossDomainInsights?: string[];
 }
 
+export interface StudentDomainRank {
+  domainId: DomainId;
+  rank: number; // 1-based, ties allowed (e.g. multiple domains can have rank 1)
+}
+
+export interface StudentSubmission {
+  id: string;
+  name: string;
+  department: string;
+  year: string;
+  phoneNumber: string;
+  pathChosen: 'self_selected' | 'questionnaire';
+  rankings: StudentDomainRank[];
+  createdAt: string;
+}
+
 export interface StudentProfile {
   id: string;
   anonymousSessionId: string;
