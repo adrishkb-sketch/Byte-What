@@ -20,7 +20,7 @@ export interface AdaptiveState {
  */
 export function shouldStopQuestionnaire(responses: UserResponse[]): boolean {
   if (responses.length < 10) return false;
-  if (responses.length >= 30) return true;
+  if (responses.length >= 25) return true; // Hard limit capped at 25 questions
 
   const accumulators = calculateDomainScores(responses);
 
@@ -42,12 +42,89 @@ export function shouldStopQuestionnaire(responses: UserResponse[]): boolean {
     return true;
   }
 
-  // If 20 questions answered and top 3 have moderate confidence (> 55%)
-  if (responses.length >= 20 && avgConfidence >= 55) {
+  // If 18+ questions answered and top 3 have moderate confidence (> 55%)
+  if (responses.length >= 18 && avgConfidence >= 55) {
     return true;
   }
 
   return false;
+}
+
+/**
+ * Gathers a rich pool of relevant candidate questions for Gemini selection
+ */
+export function getAdaptiveCandidates(responses: UserResponse[], limit: number = 20): Question[] {
+  const answeredSet = new Set(responses.map((r) => r.questionId));
+  const candidates: Question[] = [];
+
+  // Phase 1: Universal questions for early stage
+  if (responses.length < 5) {
+    for (const qId of INITIAL_UNIVERSAL_ORDER) {
+      if (!answeredSet.has(qId)) {
+        const q = QUESTION_MAP.get(qId);
+        if (q) candidates.push(q);
+      }
+    }
+  }
+
+  // Phase 2: Top scoring domains
+  const accumulators = calculateDomainScores(responses);
+  const domainRankings = Array.from(accumulators.entries())
+    .map(([domainId, acc]) => {
+      const score = acc.maxPossibleWeightedSum > 0 ? (acc.weightedSum / acc.maxPossibleWeightedSum) * 100 : 0;
+      const confidence = calculateConfidence(acc);
+      return { domainId, score, confidence, evidence: acc.evidenceCount };
+    })
+    .sort((a, b) => {
+      const priorityA = a.score * (100 - a.confidence);
+      const priorityB = b.score * (100 - b.confidence);
+      return priorityB - priorityA;
+    });
+
+  for (const dom of domainRankings.slice(0, 6)) {
+    const questions = DOMAIN_QUESTIONS.filter(
+      (q) => q.primaryDomainId === dom.domainId && !answeredSet.has(q.id)
+    );
+    for (const q of questions.slice(0, 3)) {
+      if (!candidates.some((c) => c.id === q.id)) {
+        candidates.push(q);
+      }
+    }
+    if (candidates.length >= limit) break;
+  }
+
+  // Phase 3: Complementary domains
+  const topDomain = domainRankings[0]?.domainId;
+  if (topDomain && candidates.length < limit) {
+    const complements = COMPLEMENTARITY_MATRIX[topDomain];
+    if (complements) {
+      const compDomains = Object.keys(complements) as DomainId[];
+      for (const compId of compDomains) {
+        const compQuestions = DOMAIN_QUESTIONS.filter(
+          (q) => q.primaryDomainId === compId && !answeredSet.has(q.id)
+        );
+        for (const q of compQuestions.slice(0, 2)) {
+          if (!candidates.some((c) => c.id === q.id)) {
+            candidates.push(q);
+          }
+        }
+        if (candidates.length >= limit) break;
+      }
+    }
+  }
+
+  // Phase 4: Remaining questions if still needed
+  if (candidates.length < limit) {
+    const remainingUniversal = UNIVERSAL_QUESTIONS.filter((q) => !answeredSet.has(q.id));
+    for (const q of remainingUniversal) {
+      if (!candidates.some((c) => c.id === q.id)) {
+        candidates.push(q);
+      }
+      if (candidates.length >= limit) break;
+    }
+  }
+
+  return candidates.slice(0, limit);
 }
 
 /**
@@ -56,7 +133,7 @@ export function shouldStopQuestionnaire(responses: UserResponse[]): boolean {
 export function getNextAdaptiveQuestion(responses: UserResponse[]): Question | null {
   const answeredSet = new Set(responses.map((r) => r.questionId));
 
-  if (responses.length >= 30) {
+  if (responses.length >= 25) {
     return null; // hard limit reached
   }
 

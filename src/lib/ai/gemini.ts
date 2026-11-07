@@ -1,27 +1,163 @@
-import { GoogleGenAI } from '@google/genai';
-import { DomainId } from '@/types';
-import { DOMAIN_MAP } from '@/data/domains';
+import { DomainId, Question, StudentDomainRank, UserResponse } from '@/types';
+import { DOMAIN_MAP, DOMAINS } from '@/data/domains';
 import {
   AiExplanation,
   AiExplanationSchema,
   AiInterpretation,
   AiInterpretationSchema,
 } from '@/lib/validations/ai';
+import { geminiPool } from './gemini-pool';
+import { calculateDomainScores } from '@/lib/questionnaire/scoring';
 
-const apiKey = process.env.GEMINI_API_KEY || '';
-const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+/**
+ * Uses Gemini (with key rotation) to choose the most informative next question
+ * based on the student's answered questions and current interest distribution.
+ */
+export async function selectNextQuestionWithGemini(
+  history: UserResponse[],
+  candidateQuestions: Question[]
+): Promise<string | null> {
+  if (candidateQuestions.length === 0) return null;
+  if (geminiPool.getAvailableKeyCount() === 0) return null;
 
-let geminiClient: GoogleGenAI | null = null;
-if (apiKey) {
+  // Summarize student answers for prompt
+  const recentHistory = history.slice(-6).map((r) => {
+    return `Question ${r.questionId}: value=${r.numericValue !== undefined ? r.numericValue : r.selectedOptionId}`;
+  }).join(', ');
+
+  // Take a sample of up to 15 candidates across different domains
+  const sampleCandidates = candidateQuestions.slice(0, 15).map((q) => ({
+    id: q.id,
+    domain: q.primaryDomainId || 'universal',
+    text: q.text,
+  }));
+
+  const prompt = `You are an adaptive questionnaire engine for engineering college students at GCECT.
+A student has answered ${history.length} questions so far. Recent responses:
+[${recentHistory}]
+
+From the following list of candidate questions, select the SINGLE question ID that will best clarify, test depth, or resolve uncertainty in their technology interests:
+${JSON.stringify(sampleCandidates)}
+
+Respond with ONLY the exact question ID (e.g. "Q042"). No markdown, no punctuation.`;
+
   try {
-    geminiClient = new GoogleGenAI({ apiKey });
+    const responseText = await geminiPool.generateContentWithRotation(prompt);
+    if (responseText) {
+      const match = responseText.trim().match(/Q\d{3}/i);
+      if (match) {
+        const selectedId = match[0].toUpperCase();
+        if (candidateQuestions.some((q) => q.id === selectedId)) {
+          return selectedId;
+        }
+      }
+    }
   } catch (err) {
-    console.warn('Failed to initialize GoogleGenAI client:', err);
+    console.warn('[selectNextQuestionWithGemini] Failed to select with Gemini:', err);
   }
+
+  return null;
+}
+
+export function getFallbackDomainRankings(responses: UserResponse[]): {
+  rankings: StudentDomainRank[];
+  explanation: string;
+} {
+  const accumulators = calculateDomainScores(responses);
+  const provisional = Array.from(accumulators.entries())
+    .map(([domainId, acc]) => {
+      const score = acc.maxPossibleWeightedSum > 0 ? Math.round((acc.weightedSum / acc.maxPossibleWeightedSum) * 100) : 0;
+      return { domainId, score, evidenceCount: acc.evidenceCount };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  // Group into ranks with ties for close scores (within 4 points)
+  const rankings: StudentDomainRank[] = [];
+  let currentRank = 1;
+
+  for (let i = 0; i < provisional.length; i++) {
+    if (i > 0) {
+      const diff = provisional[i - 1].score - provisional[i].score;
+      if (diff > 4) {
+        currentRank = i + 1;
+      }
+      // If diff <= 4, keep currentRank (tied rank)
+    }
+    rankings.push({
+      domainId: provisional[i].domainId,
+      rank: currentRank,
+    });
+  }
+
+  const topDomain = DOMAIN_MAP.get(provisional[0]?.domainId)?.name || 'Engineering';
+  const explanation = `Algorithmic analysis identifies your highest technological affinity in ${topDomain}, with complementary focus across synergistic domains.`;
+
+  return { rankings, explanation };
 }
 
 /**
- * Deterministic fallback for text interpretation when Gemini is unavailable.
+ * Uses Gemini (with key rotation) to validate all responses and generate a prioritized 1-to-20 ranking
+ * of the 20 technology categories with rationale and suggested ties.
+ * Falls back immediately to deterministic scoring in the background if Gemini is offline or unavailable.
+ */
+export async function rankInterestsWithGemini(
+  responses: UserResponse[]
+): Promise<{ rankings: StudentDomainRank[]; explanation: string }> {
+  if (geminiPool.getAvailableKeyCount() === 0) {
+    return getFallbackDomainRankings(responses);
+  }
+
+  const accumulators = calculateDomainScores(responses);
+  const provisional = Array.from(accumulators.entries()).map(([domainId, acc]) => {
+    const score = acc.maxPossibleWeightedSum > 0 ? Math.round((acc.weightedSum / acc.maxPossibleWeightedSum) * 100) : 0;
+    return {
+      domainId,
+      name: DOMAIN_MAP.get(domainId)?.name || domainId,
+      score,
+      evidenceCount: acc.evidenceCount,
+    };
+  }).sort((a, b) => b.score - a.score);
+
+  const prompt = `You are an expert engineering advisor for GCECT (Government College of Engineering and Ceramic Technology).
+A student completed our adaptive technology interest questionnaire (${responses.length} answered questions).
+Their provisional algorithmic scores are:
+${JSON.stringify(provisional)}
+
+Validate these results and output a finalized priority list from Rank 1 (highest priority) to Rank 20 for all 20 domains.
+If two or more domains have very close passion scores or strong synergy, YOU CAN ASSIGN THEM THE SAME RANK (A TIE, e.g., both Rank 1).
+
+Return ONLY a valid JSON object matching this schema:
+{
+  "rankings": [
+    { "domainId": "domain_id", "rank": 1 }
+  ],
+  "explanation": "Short 2-sentence rationale summarizing their top strengths and why ties were made"
+}
+Strictly include all 20 domain IDs:
+software_web, mobile_development, artificial_intelligence, machine_learning, data_science, cybersecurity, cloud_devops, networks_systems, blockchain_web3, game_development, ar_vr_xr, robotics_iot, electronics_vlsi, competitive_programming, ui_ux_design, graphic_3d_design, entrepreneurship, cs_research, bioinformatics_healthtech, fintech_quant.
+No markdown backticks. Valid JSON only.`;
+
+  try {
+    const text = await geminiPool.generateContentWithRotation(prompt);
+    if (text) {
+      const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleanJson);
+      if (parsed.rankings && Array.isArray(parsed.rankings)) {
+        return {
+          rankings: parsed.rankings,
+          explanation: parsed.explanation || '',
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('[rankInterestsWithGemini] Failed to rank with Gemini, using background fallback:', err);
+  }
+
+  return getFallbackDomainRankings(responses);
+}
+
+/**
+ * Deterministic fallback for text interpretation.
  */
 export function getFallbackInterpretation(userText: string): AiInterpretation {
   const lower = userText.toLowerCase();
@@ -69,13 +205,9 @@ export function getFallbackInterpretation(userText: string): AiInterpretation {
 }
 
 /**
- * Interpret student's free-form written interests via Gemini or deterministic fallback.
+ * Interpret student's free-form written interests via Gemini Pool or fallback.
  */
 export async function interpretStudentText(text: string): Promise<AiInterpretation> {
-  if (!geminiClient || !apiKey) {
-    return getFallbackInterpretation(text);
-  }
-
   const prompt = `You are an expert engineering advisor for GCECT (Government College of Engineering and Ceramic Technology).
 A student wrote this optional description of their technology interests:
 """${text.slice(0, 1000)}"""
@@ -94,23 +226,21 @@ Return ONLY a valid JSON object matching this schema:
 Do not include markdown fences or any other text.`;
 
   try {
-    const response = await geminiClient.models.generateContent({
-      model: modelName,
-      contents: prompt,
-    });
-
-    const rawText = response.text || '';
-    const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-    const parsed = JSON.parse(cleanJson);
-    return AiInterpretationSchema.parse(parsed);
+    const rawText = await geminiPool.generateContentWithRotation(prompt);
+    if (rawText) {
+      const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleanJson);
+      return AiInterpretationSchema.parse(parsed);
+    }
   } catch (error) {
     console.warn('Gemini text interpretation fallback triggered:', error);
-    return getFallbackInterpretation(text);
   }
+
+  return getFallbackInterpretation(text);
 }
 
 /**
- * Deterministic fallback for interest explanations and project suggestions.
+ * Deterministic fallback for interest explanations.
  */
 export function getFallbackExplanation(
   topDomains: DomainId[],
@@ -150,16 +280,12 @@ export function getFallbackExplanation(
 }
 
 /**
- * Generate interest explanation and project suggestions via Gemini or deterministic fallback.
+ * Generate interest explanation and project suggestions via Gemini Pool or fallback.
  */
 export async function explainInterestResults(
   topDomains: DomainId[],
   domainScores: Record<DomainId, number>
 ): Promise<AiExplanation> {
-  if (!geminiClient || !apiKey) {
-    return getFallbackExplanation(topDomains, domainScores);
-  }
-
   const domainNames = topDomains.map((id) => DOMAIN_MAP.get(id)?.name || id);
 
   const prompt = `You are BYTE WHAT's AI Academic & Technical Mentor for GCECT college students.
@@ -186,18 +312,15 @@ Return ONLY a valid JSON object matching this schema:
 Do not output markdown codeblocks. Return valid JSON only.`;
 
   try {
-    const response = await geminiClient.models.generateContent({
-      model: modelName,
-      contents: prompt,
-    });
-
-    const rawText = response.text || '';
-    const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-    const parsed = JSON.parse(cleanJson);
-    return AiExplanationSchema.parse(parsed);
+    const rawText = await geminiPool.generateContentWithRotation(prompt);
+    if (rawText) {
+      const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleanJson);
+      return AiExplanationSchema.parse(parsed);
+    }
   } catch (error) {
     console.warn('Gemini explanation fallback triggered:', error);
-    return getFallbackExplanation(topDomains, domainScores);
   }
-}
 
+  return getFallbackExplanation(topDomains, domainScores);
+}

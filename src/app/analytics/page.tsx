@@ -19,7 +19,23 @@ import {
   ShieldCheck,
   ArrowRight,
   Filter,
+  Layers,
+  PieChart as PieIcon,
+  TrendingUp,
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  PieChart,
+  Pie,
+  Cell,
+  CartesianGrid,
+} from 'recharts';
 import { DOMAINS, DOMAIN_MAP } from '@/data/domains';
 import { DomainId, StudentSubmission } from '@/types';
 import { DomainIcon } from '@/components/ui/DomainIcon';
@@ -34,13 +50,25 @@ const DEPARTMENTS = [
 
 const YEARS = ['All', '1st Year', '2nd Year', '3rd Year', '4th Year'];
 
+const CATEGORY_COLORS = [
+  '#3B82F6', // Blue
+  '#8B5CF6', // Violet
+  '#06B6D4', // Cyan
+  '#10B981', // Emerald
+  '#F59E0B', // Amber
+  '#EC4899', // Pink
+  '#6366F1', // Indigo
+];
+
 export default function AnalyticsPage() {
+  const [isMounted, setIsMounted] = useState<boolean>(false);
   const [selectedDomainId, setSelectedDomainId] = useState<DomainId>('software_web');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('All');
   const [selectedYear, setSelectedYear] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const [students, setStudents] = useState<(StudentSubmission & { targetDomainRank?: number })[]>([]);
+  const [analyticsData, setAnalyticsData] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Phone number unlocking state
@@ -48,6 +76,10 @@ export default function AnalyticsPage() {
   const [passwordModalStudentId, setPasswordModalStudentId] = useState<string | null>(null);
   const [enteredPassword, setEnteredPassword] = useState<string>('');
   const [passwordError, setPasswordError] = useState<string>('');
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // Fetch real submissions filtered by the selected category/filters
   useEffect(() => {
@@ -73,6 +105,22 @@ export default function AnalyticsPage() {
 
     fetchSubmissions();
   }, [selectedDomainId, selectedDepartment, selectedYear, searchQuery]);
+
+  // Fetch full aggregate analytics for comparison charts
+  useEffect(() => {
+    async function fetchAnalytics() {
+      try {
+        const res = await fetch('/api/analytics');
+        const json = await res.json();
+        if (json.success) {
+          setAnalyticsData(json.data);
+        }
+      } catch (err) {
+        console.error('Failed to load analytics:', err);
+      }
+    }
+    fetchAnalytics();
+  }, [students.length]);
 
   function handleEyeClick(studentId: string) {
     if (unlockedPhones[studentId]) {
@@ -105,10 +153,39 @@ export default function AnalyticsPage() {
   const totalInCategory = students.length;
   const rank1Count = students.filter((s) => s.targetDomainRank === 1).length;
 
+  // Chart data preparation
+  const domainChartData = (analyticsData?.domainRankings || []).map((d: any) => ({
+    name: d.name.length > 20 ? d.name.slice(0, 18) + '...' : d.name,
+    fullName: d.name,
+    total: d.count,
+    topChoice: d.topRankedCount,
+  }));
+
+  const deptChartData = Object.entries(analyticsData?.departmentBreakdown || {}).map(([dept, count]) => ({
+    department: dept.replace('Computer Science & Engineering', 'CSE').replace('Information Technology', 'IT').replace('Ceramic Technology', 'Ceramic'),
+    fullName: dept,
+    students: count as number,
+  }));
+
+  const yearChartData = Object.entries(analyticsData?.yearBreakdown || {}).map(([year, count]) => ({
+    year,
+    students: count as number,
+  }));
+
+  // Category grouping
+  const categoryCounts: Record<string, number> = {};
+  (analyticsData?.domainRankings || []).forEach((d: any) => {
+    categoryCounts[d.category] = (categoryCounts[d.category] || 0) + d.count;
+  });
+  const categoryPieData = Object.entries(categoryCounts).map(([cat, val]) => ({
+    name: cat,
+    value: val,
+  }));
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-16">
       {/* Page Header */}
-      <div className="max-w-3xl mb-10">
+      <div className="max-w-3xl mb-8">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent-cyan/10 border border-accent-cyan/20 text-xs text-accent-cyan mb-3">
           <BarChart2 className="w-3.5 h-3.5" />
           <span>Live GCECT Student Submissions & Interests</span>
@@ -117,21 +194,21 @@ export default function AnalyticsPage() {
           Technology Interests & Student Rankings
         </h1>
         <p className="mt-2 text-sm text-text-secondary leading-relaxed">
-          Select any of the 20 technology categories to view the real students who prioritized it. Students who ranked the category higher appear at the top.
+          Select any of the 20 technology categories to view the real students who prioritized it. Students who ranked the category higher appear at the top. Comparative college-wide graphs are featured below.
         </p>
       </div>
 
-      {/* 1. Category Selector: The 20 Categories Grid */}
-      <div className="mb-10">
+      {/* 1. Category Selector: The 20 Categories Grid (LOADED AND VISIBLE FIRST) */}
+      <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
             <Filter className="w-3.5 h-3.5 text-primary" />
             <span>Select Technology Category (20 Domains)</span>
           </span>
-          <span className="text-[11px] text-text-muted">Currently active: {selectedDomain?.name}</span>
+          <span className="text-[11px] text-text-muted">Active: <strong className="text-white">{selectedDomain?.name}</strong></span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2.5 max-h-60 overflow-y-auto pr-1 p-2 rounded-2xl bg-[#0B1220]/70 border border-white/[0.08]">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2.5 max-h-64 overflow-y-auto pr-1 p-2 rounded-2xl bg-[#0B1220]/70 border border-white/[0.08]">
           {DOMAINS.map((domain) => {
             const isSelected = selectedDomainId === domain.id;
             return (
@@ -139,214 +216,197 @@ export default function AnalyticsPage() {
                 key={domain.id}
                 type="button"
                 onClick={() => setSelectedDomainId(domain.id)}
-                className={`p-3 rounded-xl border text-left transition-all flex items-center gap-2.5 ${
+                className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between gap-2 ${
                   isSelected
-                    ? 'bg-primary/25 border-primary text-white shadow-md shadow-primary/20 scale-[1.02]'
+                    ? 'bg-primary/20 border-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
                     : 'bg-white/[0.02] border-white/[0.05] text-text-secondary hover:bg-white/[0.05] hover:text-white'
                 }`}
               >
-                <div
-                  className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-                  style={{ backgroundColor: `${domain.color}25`, color: domain.color }}
-                >
-                  <DomainIcon name={domain.iconName} className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                    style={{ backgroundColor: `${domain.color}25`, color: domain.color }}
+                  >
+                    <DomainIcon name={domain.iconName} className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-xs font-bold line-clamp-1">{domain.name}</span>
                 </div>
-                <span className="text-xs font-medium truncate">{domain.name}</span>
+                <span className="text-[10px] text-text-muted">{domain.category}</span>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* 2. Secondary Filter Bar (Department, Year, Search) */}
-      <div className="glass-panel p-4 rounded-2xl mb-8 flex flex-col md:flex-row items-center justify-between gap-4">
-        {/* Search */}
-        <div className="relative w-full md:w-72">
-          <Search className="w-4 h-4 text-text-muted absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search student name..."
-            className="w-full bg-[#080D18] border border-white/[0.08] rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-text-muted focus:outline-none focus:border-primary"
-          />
-        </div>
-
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto text-xs">
-          <div className="flex items-center gap-1.5">
-            <span className="text-text-muted">Department:</span>
+      {/* Filter Toolbar (Department, Year, Search) */}
+      <div className="glass-panel p-4 rounded-2xl mb-8 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <GraduationCap className="w-3.5 h-3.5 text-accent-cyan" />
+            <span className="text-xs text-text-muted">Department:</span>
             <select
               value={selectedDepartment}
               onChange={(e) => setSelectedDepartment(e.target.value)}
-              className="bg-[#080D18] border border-white/[0.08] rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-primary"
+              className="bg-[#080D18] border border-white/[0.1] rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-primary"
             >
               {DEPARTMENTS.map((dept) => (
-                <option key={dept} value={dept}>
+                <option key={dept} value={dept} className="bg-[#080D18] text-white">
                   {dept}
                 </option>
               ))}
             </select>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="text-text-muted">Year:</span>
+          <div className="flex items-center gap-2">
+            <Calendar className="w-3.5 h-3.5 text-accent-violet" />
+            <span className="text-xs text-text-muted">Year:</span>
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(e.target.value)}
-              className="bg-[#080D18] border border-white/[0.08] rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-primary"
+              className="bg-[#080D18] border border-white/[0.1] rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-primary"
             >
-              {YEARS.map((yr) => (
-                <option key={yr} value={yr}>
-                  {yr}
+              {YEARS.map((y) => (
+                <option key={y} value={y} className="bg-[#080D18] text-white">
+                  {y}
                 </option>
               ))}
             </select>
           </div>
         </div>
+
+        <div className="relative min-w-[240px]">
+          <Search className="w-3.5 h-3.5 text-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by student or dept..."
+            className="w-full bg-[#080D18] border border-white/[0.1] rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-text-muted focus:outline-none focus:border-primary"
+          />
+        </div>
       </div>
 
-      {/* 3. Category Summary Stats */}
-      <div className="glass-card p-6 rounded-2xl mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
+      {/* Selected Domain Banner & Ranking Header */}
+      <div className="glass-panel p-6 rounded-3xl mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-l-4" style={{ borderLeftColor: selectedDomain?.color || '#3B82F6' }}>
+        <div className="flex items-center gap-4">
           <div
-            className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg"
+            className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
             style={{ backgroundColor: `${selectedDomain?.color}25`, color: selectedDomain?.color }}
           >
             {selectedDomain && <DomainIcon name={selectedDomain.iconName} className="w-6 h-6" />}
           </div>
           <div>
-            <h2 className="text-lg font-bold text-white">{selectedDomain?.name}</h2>
-            <span className="text-xs text-text-muted">{selectedDomain?.category}</span>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg sm:text-xl font-extrabold text-white">{selectedDomain?.name}</h2>
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white/[0.06] text-text-muted">
+                {selectedDomain?.category}
+              </span>
+            </div>
+            <p className="text-xs text-text-secondary mt-1 line-clamp-1 max-w-xl">
+              {selectedDomain?.description}
+            </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-6 text-xs">
-          <div>
-            <span className="text-text-muted block text-[11px]">Total Interested</span>
-            <span className="text-xl font-bold text-white">{totalInCategory} students</span>
+        <div className="flex items-center gap-4 sm:border-l sm:border-white/[0.1] sm:pl-6">
+          <div className="text-center">
+            <span className="text-xs text-text-muted block">Interested</span>
+            <span className="text-lg font-extrabold text-white">{totalInCategory}</span>
           </div>
-          <div>
-            <span className="text-text-muted block text-[11px]">Rank 1 (Top Priority)</span>
-            <span className="text-xl font-bold text-accent-cyan">{rank1Count} students</span>
+          <div className="text-center">
+            <span className="text-xs text-text-muted block">Rank 1 (Top)</span>
+            <span className="text-lg font-extrabold text-accent-cyan">{rank1Count}</span>
           </div>
         </div>
       </div>
 
-      {/* 4. Ranked Students List */}
-      <div className="mb-8">
+      {/* Student Submissions List (Ranked with Highest Priority at the Top) */}
+      <div className="mb-14">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
             <Users className="w-4 h-4 text-primary" />
-            <span>Students Interested in {selectedDomain?.name} (Ordered by Priority)</span>
+            <span>Students Interested in {selectedDomain?.name} ({students.length})</span>
           </h3>
           <span className="text-[11px] text-text-muted">
-            Highest preference (Rank 1) shown first
+            Ranked by priority order (Rank 1 at top)
           </span>
         </div>
 
         {loading ? (
-          <div className="py-20 text-center glass-panel rounded-3xl">
-            <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-3" />
-            <p className="text-xs text-text-muted">Loading live student rankings...</p>
+          <div className="glass-panel p-12 text-center rounded-3xl">
+            <Loader2 className="w-6 h-6 text-primary animate-spin mx-auto mb-2" />
+            <p className="text-xs text-text-muted">Loading registered students...</p>
           </div>
         ) : students.length > 0 ? (
           <div className="space-y-3">
             {students.map((student, idx) => {
-              const rank = student.targetDomainRank ?? 1;
-              const isUnlocked = unlockedPhones[student.id];
-
-              // Check if any other student shares this rank
-              const isTied = students.some((other) => other.id !== student.id && other.targetDomainRank === rank);
+              const isPhoneUnlocked = !!unlockedPhones[student.id];
+              const targetRank = student.targetDomainRank ?? 99;
+              const isTopRank = targetRank === 1;
 
               return (
                 <div
                   key={student.id}
-                  className="glass-card p-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all hover:bg-white/[0.04]"
+                  className="glass-panel p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-white/[0.15] transition-all"
                 >
-                  <div className="flex items-start sm:items-center gap-4">
-                    {/* Rank Badge */}
-                    <div
-                      className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center font-mono font-bold flex-shrink-0 ${
-                        rank === 1
-                          ? 'bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/40 shadow-md shadow-cyan-500/10'
-                          : rank === 2
-                          ? 'bg-primary/20 text-primary-light border border-primary/30'
-                          : 'bg-white/[0.05] text-text-secondary border border-white/[0.08]'
-                      }`}
-                    >
-                      <span className="text-[10px] uppercase tracking-tighter">Rank</span>
-                      <span className="text-lg leading-none">{rank}</span>
+                  <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center font-mono text-xs font-bold text-text-muted flex-shrink-0">
+                      #{idx + 1}
                     </div>
 
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <h4 className="text-sm font-bold text-white">{student.name}</h4>
-                        {isTied && (
-                          <span className="text-[10px] font-semibold text-accent-amber px-2 py-0.5 rounded bg-accent-amber/10 border border-accent-amber/30 flex items-center gap-1">
-                            <Equal className="w-2.5 h-2.5" />
-                            <span>Tied Priority</span>
-                          </span>
-                        )}
-                        <span className="text-[10px] text-text-muted font-mono">
-                          • {student.pathChosen === 'questionnaire' ? 'Adaptive Test' : 'Direct Selection'}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-sm font-bold text-white truncate">{student.name}</h4>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 ${
+                            isTopRank
+                              ? 'bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30'
+                              : 'bg-primary/10 text-primary border border-primary/20'
+                          }`}
+                        >
+                          {isTopRank ? '★ Rank 1 Priority' : `Rank ${targetRank}`}
+                        </span>
+                        <span className="text-[10px] text-text-muted bg-white/[0.04] px-1.5 py-0.5 rounded">
+                          {student.pathChosen === 'questionnaire' ? 'Adaptive AI Survey' : 'Direct Selection'}
                         </span>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-text-secondary">
+                      <div className="flex items-center gap-3 text-[11px] text-text-secondary mt-1 flex-wrap">
                         <span className="flex items-center gap-1">
-                          <GraduationCap className="w-3.5 h-3.5 text-text-muted" />
+                          <GraduationCap className="w-3 h-3 text-accent-cyan" />
                           <span>{student.department}</span>
                         </span>
+                        <span>•</span>
                         <span className="flex items-center gap-1">
-                          <Calendar className="w-3.5 h-3.5 text-text-muted" />
+                          <Calendar className="w-3 h-3 text-accent-violet" />
                           <span>{student.year}</span>
                         </span>
                       </div>
-
-                      {/* Other ranked domains */}
-                      {student.rankings && student.rankings.length > 1 && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          <span className="text-[10px] text-text-muted mr-1">Also prioritized:</span>
-                          {student.rankings
-                            .filter((r) => r.domainId !== selectedDomainId)
-                            .slice(0, 4)
-                            .map((r) => {
-                              const dom = DOMAIN_MAP.get(r.domainId);
-                              return (
-                                <span
-                                  key={r.domainId}
-                                  className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.03] text-text-muted border border-white/[0.04]"
-                                >
-                                  {dom?.name.split(' ')[0] || r.domainId} (R{r.rank})
-                                </span>
-                              );
-                            })}
-                        </div>
-                      )}
                     </div>
                   </div>
 
-                  {/* Phone Number Protected Eye Action */}
-                  <div className="flex items-center gap-3 justify-end pt-3 md:pt-0 border-t md:border-t-0 border-white/[0.05]">
-                    <div className="text-right">
-                      <span className="text-[10px] text-text-muted block font-mono">Contact Phone:</span>
-                      <span className="text-xs font-mono font-semibold text-white">
-                        {isUnlocked ? student.phoneNumber : '+91 ••••• •••••'}
+                  {/* Right side: Protected Phone Number & Actions */}
+                  <div className="flex items-center gap-3 justify-end w-full sm:w-auto flex-shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-white/[0.06]">
+                    <div className="flex items-center gap-2 bg-[#080D18] px-3 py-1.5 rounded-xl border border-white/[0.08]">
+                      <Phone className="w-3 h-3 text-accent-emerald flex-shrink-0" />
+                      <span className="text-xs font-mono text-white">
+                        {isPhoneUnlocked
+                          ? student.phoneNumber || 'N/A'
+                          : '••••••••••'}
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => handleEyeClick(student.id)}
+                        title={isPhoneUnlocked ? 'Hide phone number' : 'Click to reveal phone number (Password required)'}
+                        className="text-text-muted hover:text-white transition-colors ml-1 p-0.5"
+                      >
+                        {isPhoneUnlocked ? (
+                          <EyeOff className="w-3.5 h-3.5 text-accent-amber" />
+                        ) : (
+                          <Eye className="w-3.5 h-3.5 text-accent-cyan" />
+                        )}
+                      </button>
                     </div>
-
-                    <button
-                      onClick={() => handleEyeClick(student.id)}
-                      className={`p-2.5 rounded-xl border transition-all ${
-                        isUnlocked
-                          ? 'bg-accent-emerald/20 text-accent-emerald border-accent-emerald/40'
-                          : 'bg-white/[0.05] border-white/[0.1] text-text-secondary hover:text-white hover:bg-white/[0.08]'
-                      }`}
-                      title={isUnlocked ? 'Hide phone number' : 'Enter password to reveal phone number'}
-                    >
-                      {isUnlocked ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
                   </div>
                 </div>
               );
@@ -368,6 +428,198 @@ export default function AnalyticsPage() {
             </Link>
           </div>
         )}
+      </div>
+
+      {/* 2. COMPREHENSIVE COMPARISON ANALYTICS & GRAPHS SECTION */}
+      <div className="pt-8 border-t border-white/[0.08]">
+        <div className="mb-8">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent-violet/10 border border-accent-violet/20 text-xs text-accent-violet mb-2">
+            <TrendingUp className="w-3.5 h-3.5" />
+            <span>College-Wide Comparative Insights</span>
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-white">
+            GCECT Technology Ecosystem Analytics
+          </h2>
+          <p className="text-xs text-text-secondary mt-1">
+            Real-time visual distribution of interests across departments, academic years, and technology verticals.
+          </p>
+        </div>
+
+        {/* Summary Metric Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div className="glass-panel p-5 rounded-2xl">
+            <span className="text-[11px] text-text-muted block mb-1">Total Submissions</span>
+            <div className="text-2xl font-extrabold text-white">
+              {analyticsData?.totalSubmissions || 0}
+            </div>
+            <span className="text-[10px] text-accent-emerald mt-1 block">Live students registered</span>
+          </div>
+
+          <div className="glass-panel p-5 rounded-2xl">
+            <span className="text-[11px] text-text-muted block mb-1">Top Most Popular Domain</span>
+            <div className="text-base font-extrabold text-accent-cyan truncate">
+              {analyticsData?.domainRankings?.[0]?.name || 'N/A'}
+            </div>
+            <span className="text-[10px] text-text-muted mt-1 block">
+              {analyticsData?.domainRankings?.[0]?.count || 0} interested students
+            </span>
+          </div>
+
+          <div className="glass-panel p-5 rounded-2xl">
+            <span className="text-[11px] text-text-muted block mb-1">Top #1 Choice</span>
+            <div className="text-base font-extrabold text-accent-violet truncate">
+              {analyticsData?.domainRankings?.slice().sort((a: any, b: any) => b.topRankedCount - a.topRankedCount)[0]?.name || 'N/A'}
+            </div>
+            <span className="text-[10px] text-text-muted mt-1 block">Highest primary priority</span>
+          </div>
+
+          <div className="glass-panel p-5 rounded-2xl">
+            <span className="text-[11px] text-text-muted block mb-1">Most Active Dept</span>
+            <div className="text-base font-extrabold text-accent-amber truncate">
+              {Object.entries(analyticsData?.departmentBreakdown || {}).sort(([, a], [, b]) => (b as number) - (a as number))[0]?.[0] || 'N/A'}
+            </div>
+            <span className="text-[10px] text-text-muted mt-1 block">Leading participation</span>
+          </div>
+        </div>
+
+        {/* Chart 1: All 20 Domains Popularity & Rank 1 Distribution */}
+        <div className="glass-panel p-6 rounded-3xl mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <BarChart2 className="w-4 h-4 text-primary" />
+                <span>All 20 Technology Domains — Student Interest & Top Choice</span>
+              </h3>
+              <p className="text-xs text-text-secondary mt-0.5">
+                Comparing total students interested vs students selecting the domain as their Rank 1 top priority.
+              </p>
+            </div>
+          </div>
+
+          {isMounted && domainChartData.length > 0 ? (
+            <div className="h-80 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={domainChartData} margin={{ top: 10, right: 10, left: -20, bottom: 40 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                  <XAxis
+                    dataKey="name"
+                    stroke="#94A3B8"
+                    fontSize={10}
+                    interval={0}
+                    angle={-45}
+                    textAnchor="end"
+                  />
+                  <YAxis stroke="#94A3B8" fontSize={10} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#111827',
+                      borderColor: '#ffffff20',
+                      borderRadius: '0.75rem',
+                      color: '#F8FAFC',
+                      fontSize: '11px',
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                  <Bar dataKey="total" name="Total Interested" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="topChoice" name="Rank 1 Priority" fill="#06B6D4" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-60 flex items-center justify-center text-xs text-text-muted">
+              Chart data will render with student submissions.
+            </div>
+          )}
+        </div>
+
+        {/* Grid of Two Charts: Department Breakdown & Academic Year Progression */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+          {/* Department Breakdown */}
+          <div className="glass-panel p-6 rounded-3xl">
+            <h3 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
+              <GraduationCap className="w-4 h-4 text-accent-cyan" />
+              <span>Department Participation</span>
+            </h3>
+            <p className="text-xs text-text-secondary mb-4">
+              Student submissions across GCECT engineering departments.
+            </p>
+
+            {isMounted && deptChartData.length > 0 ? (
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={deptChartData} margin={{ top: 10, right: 10, left: -20, bottom: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                    <XAxis dataKey="department" stroke="#94A3B8" fontSize={11} />
+                    <YAxis stroke="#94A3B8" fontSize={11} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#111827',
+                        borderColor: '#ffffff20',
+                        borderRadius: '0.75rem',
+                        color: '#F8FAFC',
+                        fontSize: '11px',
+                      }}
+                    />
+                    <Bar dataKey="students" fill="#8B5CF6" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="h-48 flex items-center justify-center text-xs text-text-muted">
+                No department data available yet.
+              </div>
+            )}
+          </div>
+
+          {/* Category Distribution Pie Chart */}
+          <div className="glass-panel p-6 rounded-3xl">
+            <h3 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
+              <PieIcon className="w-4 h-4 text-accent-amber" />
+              <span>Technology Domain Categories</span>
+            </h3>
+            <p className="text-xs text-text-secondary mb-4">
+              Relative interest volume by core engineering category.
+            </p>
+
+            {isMounted && categoryPieData.length > 0 ? (
+              <div className="h-64 w-full flex items-center justify-center">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={categoryPieData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={80}
+                      innerRadius={45}
+                      paddingAngle={4}
+                      label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                      labelLine={false}
+                    >
+                      {categoryPieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#111827',
+                        borderColor: '#ffffff20',
+                        borderRadius: '0.75rem',
+                        color: '#F8FAFC',
+                        fontSize: '11px',
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="h-48 flex items-center justify-center text-xs text-text-muted">
+                No category data available yet.
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Password Modal to reveal phone number */}

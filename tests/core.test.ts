@@ -7,11 +7,11 @@ import { getFallbackExplanation, getFallbackInterpretation } from '../src/lib/ai
 import { UserResponse } from '../src/types';
 
 describe('1. Question Bank Integrity', () => {
-  it('contains exactly 200 unique questions', () => {
-    expect(ALL_QUESTIONS.length).toBe(200);
+  it('contains exactly 520 unique questions', () => {
+    expect(ALL_QUESTIONS.length).toBe(520);
 
     const ids = new Set(ALL_QUESTIONS.map((q) => q.id));
-    expect(ids.size).toBe(200);
+    expect(ids.size).toBe(520);
   });
 
   it('contains exactly 20 universal questions', () => {
@@ -23,8 +23,8 @@ describe('1. Question Bank Integrity', () => {
     });
   });
 
-  it('contains exactly 180 domain-specific questions', () => {
-    expect(DOMAIN_QUESTIONS.length).toBe(180);
+  it('contains exactly 500 domain-specific questions', () => {
+    expect(DOMAIN_QUESTIONS.length).toBe(500);
     DOMAIN_QUESTIONS.forEach((q) => {
       expect(q.isUniversal).toBe(false);
       expect(q.primaryDomainId).toBeDefined();
@@ -66,10 +66,10 @@ describe('2. Domains Integrity', () => {
     });
   });
 
-  it('every domain has exactly nine domain-specific questions', () => {
+  it('every domain has 25 domain-specific questions', () => {
     DOMAINS.forEach((domain) => {
       const domainQuestions = DOMAIN_QUESTIONS.filter((q) => q.primaryDomainId === domain.id);
-      expect(domainQuestions.length).toBe(9);
+      expect(domainQuestions.length).toBe(25);
     });
   });
 });
