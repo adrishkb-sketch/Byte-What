@@ -71,33 +71,39 @@ export function getFallbackDomainRankings(responses: UserResponse[]): {
     })
     .sort((a, b) => b.score - a.score);
 
+  // Filter to domains the student is actually interested in (positive score and positive evidence)
+  const genuineInterests = provisional.filter((d) => d.score >= 25 && d.evidenceCount > 0);
+  const toRank = genuineInterests.length >= 2
+    ? genuineInterests
+    : provisional.filter((d) => d.score > 0).slice(0, 3);
+
   // Group into ranks with ties for close scores (within 4 points)
   const rankings: StudentDomainRank[] = [];
   let currentRank = 1;
 
-  for (let i = 0; i < provisional.length; i++) {
+  for (let i = 0; i < toRank.length; i++) {
     if (i > 0) {
-      const diff = provisional[i - 1].score - provisional[i].score;
+      const diff = toRank[i - 1].score - toRank[i].score;
       if (diff > 4) {
         currentRank = i + 1;
       }
       // If diff <= 4, keep currentRank (tied rank)
     }
     rankings.push({
-      domainId: provisional[i].domainId,
+      domainId: toRank[i].domainId,
       rank: currentRank,
     });
   }
 
-  const topDomain = DOMAIN_MAP.get(provisional[0]?.domainId)?.name || 'Engineering';
-  const explanation = `Algorithmic analysis identifies your highest technological affinity in ${topDomain}, with complementary focus across synergistic domains.`;
+  const topDomain = toRank.length > 0 ? DOMAIN_MAP.get(toRank[0].domainId)?.name || 'Engineering' : 'Engineering';
+  const explanation = `Identified ${toRank.length} genuine technological interests with highest affinity in ${topDomain}.`;
 
   return { rankings, explanation };
 }
 
 /**
- * Uses Gemini (with key rotation) to validate all responses and generate a prioritized 1-to-20 ranking
- * of the 20 technology categories with rationale and suggested ties.
+ * Uses Gemini (with key rotation) to validate responses and rank ONLY those domains
+ * the student is actually interested in (with rationale and suggested ties).
  * Falls back immediately to deterministic scoring in the background if Gemini is offline or unavailable.
  */
 export async function rankInterestsWithGemini(
@@ -118,12 +124,23 @@ export async function rankInterestsWithGemini(
     };
   }).sort((a, b) => b.score - a.score);
 
+  // Filter ONLY to domains where the student showed positive affinity/interest
+  const genuineInterests = provisional.filter((d) => d.score >= 25 && d.evidenceCount > 0);
+  const candidatesToRank = genuineInterests.length >= 2
+    ? genuineInterests
+    : provisional.filter((d) => d.score > 0).slice(0, 4);
+
+  if (candidatesToRank.length === 0) {
+    return getFallbackDomainRankings(responses);
+  }
+
   const prompt = `You are an expert engineering advisor for GCECT (Government College of Engineering and Ceramic Technology).
 A student completed our adaptive technology interest questionnaire (${responses.length} answered questions).
-Their provisional algorithmic scores are:
-${JSON.stringify(provisional)}
+Based on their answers, here are the ONLY domains where the student demonstrated GENUINE interest and positive affinity:
+${JSON.stringify(candidatesToRank)}
 
-Validate these results and output a finalized priority list from Rank 1 (highest priority) to Rank 20 for all 20 domains.
+Validate and prioritize ONLY these genuine interest domains in priority order starting from Rank 1 (highest priority).
+Do NOT include any domains where the student showed zero interest or no affinity.
 If two or more domains have very close passion scores or strong synergy, YOU CAN ASSIGN THEM THE SAME RANK (A TIE, e.g., both Rank 1).
 
 Return ONLY a valid JSON object matching this schema:
@@ -131,10 +148,9 @@ Return ONLY a valid JSON object matching this schema:
   "rankings": [
     { "domainId": "domain_id", "rank": 1 }
   ],
-  "explanation": "Short 2-sentence rationale summarizing their top strengths and why ties were made"
+  "explanation": "Short 2-sentence rationale summarizing their top genuine interests and synergies"
 }
-Strictly include all 20 domain IDs:
-software_web, mobile_development, artificial_intelligence, machine_learning, data_science, cybersecurity, cloud_devops, networks_systems, blockchain_web3, game_development, ar_vr_xr, robotics_iot, electronics_vlsi, competitive_programming, ui_ux_design, graphic_3d_design, entrepreneurship, cs_research, bioinformatics_healthtech, fintech_quant.
+Valid domain IDs must be strictly chosen from: ${candidatesToRank.map((c) => c.domainId).join(', ')}.
 No markdown backticks. Valid JSON only.`;
 
   try {
@@ -142,11 +158,15 @@ No markdown backticks. Valid JSON only.`;
     if (text) {
       const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleanJson);
-      if (parsed.rankings && Array.isArray(parsed.rankings)) {
-        return {
-          rankings: parsed.rankings,
-          explanation: parsed.explanation || '',
-        };
+      if (parsed.rankings && Array.isArray(parsed.rankings) && parsed.rankings.length > 0) {
+        const allowedSet = new Set(candidatesToRank.map((c) => c.domainId));
+        const validRankings = parsed.rankings.filter((r: any) => allowedSet.has(r.domainId));
+        if (validRankings.length > 0) {
+          return {
+            rankings: validRankings,
+            explanation: parsed.explanation || '',
+          };
+        }
       }
     }
   } catch (err) {

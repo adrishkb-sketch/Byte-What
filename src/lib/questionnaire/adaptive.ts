@@ -17,9 +17,10 @@ export interface AdaptiveState {
 
 /**
  * Determines whether the questionnaire should stop adaptively.
+ * Enforces a strict range of 20 to 25 questions.
  */
 export function shouldStopQuestionnaire(responses: UserResponse[]): boolean {
-  if (responses.length < 10) return false;
+  if (responses.length < 20) return false; // Strictly ask at least 20 questions
   if (responses.length >= 25) return true; // Hard limit capped at 25 questions
 
   const accumulators = calculateDomainScores(responses);
@@ -37,13 +38,8 @@ export function shouldStopQuestionnaire(responses: UserResponse[]): boolean {
   const top3 = sorted.slice(0, 3);
   const avgConfidence = top3.reduce((sum, item) => sum + item.confidence, 0) / (top3.length || 1);
 
-  // If top 3 domains have high confidence (> 65%) and at least 14 questions answered
-  if (responses.length >= 14 && avgConfidence >= 65) {
-    return true;
-  }
-
-  // If 18+ questions answered and top 3 have moderate confidence (> 55%)
-  if (responses.length >= 18 && avgConfidence >= 55) {
+  // If top 3 domains have high confidence (> 65%) and at least 22 questions answered
+  if (responses.length >= 22 && avgConfidence >= 65) {
     return true;
   }
 
@@ -81,7 +77,7 @@ export function getAdaptiveCandidates(responses: UserResponse[], limit: number =
       return priorityB - priorityA;
     });
 
-  for (const dom of domainRankings.slice(0, 6)) {
+  for (const dom of domainRankings.slice(0, 8)) {
     const questions = DOMAIN_QUESTIONS.filter(
       (q) => q.primaryDomainId === dom.domainId && !answeredSet.has(q.id)
     );
@@ -124,6 +120,16 @@ export function getAdaptiveCandidates(responses: UserResponse[], limit: number =
     }
   }
 
+  // Phase 5: Any other domain questions to guarantee a full pool of 20
+  if (candidates.length < limit) {
+    for (const q of DOMAIN_QUESTIONS) {
+      if (!answeredSet.has(q.id) && !candidates.some((c) => c.id === q.id)) {
+        candidates.push(q);
+      }
+      if (candidates.length >= limit) break;
+    }
+  }
+
   return candidates.slice(0, limit);
 }
 
@@ -134,14 +140,15 @@ export function getNextAdaptiveQuestion(responses: UserResponse[]): Question | n
   const answeredSet = new Set(responses.map((r) => r.questionId));
 
   if (responses.length >= 25) {
-    return null; // hard limit reached
+    return null; // hard limit reached at 25 questions
   }
 
-  // Phase 1: Universal questions (first 4-6 questions)
+  // Phase 1: Universal questions (first 4-5 questions)
   if (responses.length < 5) {
     for (const qId of INITIAL_UNIVERSAL_ORDER) {
       if (!answeredSet.has(qId)) {
-        return QUESTION_MAP.get(qId) || null;
+        const q = QUESTION_MAP.get(qId);
+        if (q) return q;
       }
     }
   }
@@ -164,32 +171,29 @@ export function getNextAdaptiveQuestion(responses: UserResponse[]): Question | n
 
   // Sort domains: Prioritize high score + low confidence (high potential, needs evidence)
   domainRankings.sort((a, b) => {
-    // Priority metric: score * (100 - confidence)
     const priorityA = a.score * (100 - a.confidence);
     const priorityB = b.score * (100 - b.confidence);
     return priorityB - priorityA;
   });
 
-  // Check top candidate domains
+  // Check top candidate domains with positive interest
   for (const candidate of domainRankings) {
-    // Only drill down if there is positive interest
-    if (candidate.score < 35 && candidate.evidence > 0 && responses.length >= 8) {
+    // Only drill down if there is positive interest or if we are still exploring
+    if (candidate.score < 25 && candidate.evidence > 0 && responses.length >= 10) {
       continue;
     }
 
-    // Find unanswered domain questions for this domain
     const unansweredDomainQuestions = DOMAIN_QUESTIONS.filter(
       (q) => q.primaryDomainId === candidate.domainId && !answeredSet.has(q.id)
     );
 
-    // If we haven't asked more than 3 Likert questions for this domain yet
-    if (unansweredDomainQuestions.length > 0 && candidate.likertCount < 3) {
+    // Allow asking up to 4 Likert questions for key domains
+    if (unansweredDomainQuestions.length > 0 && candidate.likertCount < 4) {
       return unansweredDomainQuestions[0];
     }
   }
 
   // Phase 3: Check Complementary / Crossover domains
-  // If top domain has crossover partners with low evidence, check them
   const topDomain = domainRankings[0]?.domainId;
   if (topDomain) {
     const complements = COMPLEMENTARITY_MATRIX[topDomain];
@@ -200,7 +204,7 @@ export function getNextAdaptiveQuestion(responses: UserResponse[]): Question | n
 
       for (const compDomain of sortedComplements) {
         const compAcc = accumulators.get(compDomain);
-        if (compAcc && compAcc.evidenceCount < 2) {
+        if (compAcc && compAcc.evidenceCount < 3) {
           const compQuestions = DOMAIN_QUESTIONS.filter(
             (q) => q.primaryDomainId === compDomain && !answeredSet.has(q.id)
           );
@@ -212,9 +216,9 @@ export function getNextAdaptiveQuestion(responses: UserResponse[]): Question | n
     }
   }
 
-  // Phase 4: Fallback to remaining universal questions if any unanswered
+  // Phase 4: Remaining universal questions if any unanswered
   const remainingUniversal = UNIVERSAL_QUESTIONS.filter((q) => !answeredSet.has(q.id));
-  if (remainingUniversal.length > 0 && responses.length < 12) {
+  if (remainingUniversal.length > 0 && responses.length < 10) {
     return remainingUniversal[0];
   }
 
@@ -228,7 +232,7 @@ export function getNextAdaptiveQuestion(responses: UserResponse[]): Question | n
     }
   }
 
-  // Phase 6: Any unanswered question from the bank
+  // Phase 6: Any unanswered question from the bank (strictly non-null if responses < 25)
   const anyUnanswered = ALL_QUESTIONS.find((q) => !answeredSet.has(q.id));
   return anyUnanswered || null;
 }

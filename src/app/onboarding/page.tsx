@@ -83,6 +83,11 @@ export default function OnboardingPage() {
   }
 
   function handleChooseQuestionnaire() {
+    // Generate a fresh session ID so the questionnaire starts cleanly with 20-25 questions
+    if (typeof window !== 'undefined') {
+      const freshSessionId = `anon-${crypto.randomUUID()}`;
+      localStorage.setItem('byte_what_anon_session_id', freshSessionId);
+    }
     saveStudentInfo({
       name: name.trim(),
       department,

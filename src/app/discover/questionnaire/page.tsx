@@ -17,6 +17,8 @@ import {
   Check,
   GripVertical,
   Bot,
+  Plus,
+  X,
 } from 'lucide-react';
 import { getOrCreateAnonymousSessionId, clearAnonymousSessionId, getStudentInfo } from '@/lib/session';
 import { Question, DomainId, StudentDomainRank, UserResponse } from '@/types';
@@ -45,6 +47,7 @@ export default function QuestionnairePage() {
   const [reviewRanks, setReviewRanks] = useState<Record<DomainId, number>>({} as any);
   const [aiRationale, setAiRationale] = useState<string>('');
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
+  const [selectedAddDomain, setSelectedAddDomain] = useState<DomainId | ''>('');
 
   const [loading, setLoading] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -67,14 +70,15 @@ export default function QuestionnairePage() {
 
         const json = await res.json();
         if (json.success) {
-          setQuestionsAnswered(json.data.responsesCount || 0);
+          const count = json.data.responsesCount || 0;
+          setQuestionsAnswered(count);
           if (json.data.nextQuestion) {
             setCurrentQuestion(json.data.nextQuestion);
-            if (json.data.responsesCount >= 10) {
+            if (count >= 20) {
               setCanFinishEarly(true);
             }
-          } else {
-            // Already ready to complete
+          } else if (count >= 20) {
+            // Already answered 20+ questions in this session
             initiateReviewStep(id, []);
           }
         } else {
@@ -131,9 +135,11 @@ export default function QuestionnairePage() {
         setSelectedOptionId('');
         setSelectedLikertValue(null);
 
-        if (json.data.isReadyToComplete || !json.data.nextQuestion || count >= 25) {
+        const isComplete = count >= 25 || (count >= 20 && (json.data.isReadyToComplete || !json.data.nextQuestion));
+
+        if (isComplete) {
           initiateReviewStep(sessionId, updatedResponses);
-        } else {
+        } else if (json.data.nextQuestion) {
           setCurrentQuestion(json.data.nextQuestion);
         }
       } else {
@@ -146,7 +152,7 @@ export default function QuestionnairePage() {
     }
   }
 
-  // Pre-submission review step: calculate provisional rankings across all 20 domains using Gemini
+  // Pre-submission review step: calculate provisional rankings for genuine interests only
   async function initiateReviewStep(targetSessionId: string, historyResponses?: UserResponse[]) {
     setCalculatingResults(true);
     try {
@@ -174,25 +180,30 @@ export default function QuestionnairePage() {
           }
         };
 
-        // 1. If Gemini rankings or fallback ranks are returned
+        // 1. If Gemini rankings or fallback ranks are returned (ranked genuine interests only)
         if (json.data.geminiRankings && Array.isArray(json.data.geminiRankings) && json.data.geminiRankings.length > 0) {
           const sortedGemini = [...json.data.geminiRankings].sort((a: any, b: any) => (a.rank ?? 99) - (b.rank ?? 99));
           sortedGemini.forEach((item: any) => {
             registerDomain(item.domainId as DomainId, item.rank ?? (uniqueOrderedList.length + 1));
           });
         } else if (json.data.allDomainScores && Array.isArray(json.data.allDomainScores)) {
-          // 2. Fall back to deterministic scores
-          json.data.allDomainScores.forEach((item: any, idx: number) => {
+          // 2. Fall back to deterministic scores: only include domains with genuine positive interest
+          const genuine = json.data.allDomainScores.filter((s: any) => s.interestScore >= 20 && s.evidenceCount > 0);
+          const listToUse = genuine.length >= 2
+            ? genuine
+            : json.data.allDomainScores.filter((s: any) => s.interestScore > 0).slice(0, 3);
+
+          listToUse.forEach((item: any, idx: number) => {
             registerDomain(item.domainId as DomainId, idx + 1);
           });
         }
 
-        // 3. Ensure any remaining domains out of the 20 are added exactly once
-        DOMAINS.forEach((d) => {
-          if (!uniqueSet.has(d.id)) {
-            registerDomain(d.id, uniqueOrderedList.length + 1);
-          }
-        });
+        // If no domains qualified, take top 3 as fallback
+        if (uniqueOrderedList.length === 0 && json.data.allDomainScores) {
+          json.data.allDomainScores.slice(0, 3).forEach((item: any, idx: number) => {
+            registerDomain(item.domainId as DomainId, idx + 1);
+          });
+        }
 
         if (json.data.writtenExplanation) {
           setAiRationale(json.data.writtenExplanation);
@@ -209,6 +220,32 @@ export default function QuestionnairePage() {
     } finally {
       setCalculatingResults(false);
     }
+  }
+
+  function handleRemoveDomain(domainId: DomainId) {
+    if (orderedDomainIds.length <= 1) {
+      setErrorMsg('You must have at least 1 interest category.');
+      return;
+    }
+    const updated = orderedDomainIds.filter((id) => id !== domainId);
+    setOrderedDomainIds(updated);
+    setReviewRanks((prev) => {
+      const copy = { ...prev };
+      delete copy[domainId];
+      return copy;
+    });
+  }
+
+  function handleAddDomain(domainId: DomainId) {
+    if (!domainId || orderedDomainIds.includes(domainId)) return;
+    const updated = [...orderedDomainIds, domainId];
+    setOrderedDomainIds(updated);
+    const existingValues = Object.values(reviewRanks);
+    const nextRank = existingValues.length > 0 ? Math.max(...existingValues) + 1 : 1;
+    setReviewRanks((prev) => ({
+      ...prev,
+      [domainId]: nextRank,
+    }));
   }
 
   // Handle Drag-and-Drop reorder
@@ -300,7 +337,7 @@ export default function QuestionnairePage() {
         </div>
         <h2 className="text-2xl font-extrabold text-white">Analyzing Your Preferences</h2>
         <p className="text-xs text-text-secondary mt-2 leading-relaxed">
-          Gemini is validating your answers and prioritizing all 20 technology categories with intelligent ties...
+          Gemini is analyzing your responses and identifying your genuine technological interests...
         </p>
       </div>
     );
@@ -339,10 +376,10 @@ export default function QuestionnairePage() {
           <div className="mb-6">
             <span className="text-xs font-bold text-accent-cyan uppercase tracking-wider">Review & Prioritize</span>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-white mt-1">
-              Your 20 Technology Categories — Reorder & Tie
+              Your Genuine Technology Interests
             </h1>
             <p className="text-xs text-text-secondary mt-1.5 leading-relaxed">
-              Here is your AI-ranked priority list based on your questionnaire responses. You can <strong className="text-white">drag & drop to reorder</strong>, edit rank numbers directly, or tie domains together for equal priority!
+              Here is your prioritized list of technology domains where you demonstrated genuine interest based on your questionnaire responses. You can <strong className="text-white">drag & drop to reorder</strong>, edit rank numbers directly, tie domains together for equal priority, or add/remove categories.
             </p>
           </div>
 
@@ -362,14 +399,14 @@ export default function QuestionnairePage() {
               <GripVertical className="w-3.5 h-3.5 text-text-muted" />
               <span>Drag handles to re-order priority</span>
             </span>
-            <span>Rank 1 is Highest</span>
+            <span>Rank 1 is Highest ({orderedDomainIds.length} interested categories)</span>
           </div>
 
           <Reorder.Group
             axis="y"
             values={orderedDomainIds}
             onReorder={handleReorder}
-            className="space-y-2.5 max-h-[520px] overflow-y-auto pr-1 mb-6"
+            className="space-y-2.5 max-h-[520px] overflow-y-auto pr-1 mb-4"
           >
             {orderedDomainIds.map((domainId, index) => {
               const domain = DOMAIN_MAP.get(domainId);
@@ -429,11 +466,52 @@ export default function QuestionnairePage() {
                         className="w-14 bg-[#080D18] border border-white/[0.15] rounded-lg px-2 py-1 text-xs text-center text-white font-mono font-bold focus:outline-none focus:border-primary"
                       />
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveDomain(domainId)}
+                      title="Remove from my interests"
+                      className="text-text-muted hover:text-accent-rose p-1.5 rounded-lg hover:bg-white/[0.05] transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </Reorder.Item>
               );
             })}
           </Reorder.Group>
+
+          {/* Add Another Category Dropdown */}
+          {orderedDomainIds.length < 20 && (
+            <div className="mb-6 p-3 rounded-2xl bg-white/[0.02] border border-white/[0.06] flex items-center gap-3">
+              <select
+                value={selectedAddDomain}
+                onChange={(e) => setSelectedAddDomain(e.target.value as DomainId)}
+                className="flex-1 bg-[#080D18] border border-white/[0.12] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-primary"
+              >
+                <option value="">+ Add another interested domain...</option>
+                {DOMAINS.filter((d) => !orderedDomainIds.includes(d.id)).map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} ({d.category})
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={!selectedAddDomain}
+                onClick={() => {
+                  if (selectedAddDomain) {
+                    handleAddDomain(selectedAddDomain as DomainId);
+                    setSelectedAddDomain('');
+                  }
+                }}
+                className="px-3.5 py-2 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] text-white text-xs font-semibold disabled:opacity-40 transition-colors flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Domain</span>
+              </button>
+            </div>
+          )}
 
           {errorMsg && (
             <p className="text-xs text-accent-rose bg-accent-rose/10 p-2.5 rounded-lg border border-accent-rose/20 mb-4">

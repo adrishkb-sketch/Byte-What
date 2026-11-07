@@ -3,7 +3,7 @@ import { ALL_QUESTIONS, DOMAIN_QUESTIONS, UNIVERSAL_QUESTIONS, QUESTION_MAP } fr
 import { DOMAINS, DOMAIN_MAP } from '../src/data/domains';
 import { calculateDomainScores, calculateConfidence, generateQuestionnaireResults } from '../src/lib/questionnaire/scoring';
 import { getNextAdaptiveQuestion, shouldStopQuestionnaire } from '../src/lib/questionnaire/adaptive';
-import { getFallbackExplanation, getFallbackInterpretation } from '../src/lib/ai/gemini';
+import { getFallbackExplanation, getFallbackInterpretation, getFallbackDomainRankings } from '../src/lib/ai/gemini';
 import { UserResponse } from '../src/types';
 
 describe('1. Question Bank Integrity', () => {
@@ -150,20 +150,45 @@ describe('4. Adaptive Engine Behavior', () => {
     expect(nextQ!.id).not.toBe('Q002');
   });
 
-  it('stops at hard limit of 30 questions', () => {
-    const thirtyResponses: UserResponse[] = Array.from({ length: 30 }, (_, i) => ({
+  it('enforces 20 to 25 questions boundary', () => {
+    // Under 20 questions, it should never stop early
+    const nineteenResponses: UserResponse[] = Array.from({ length: 19 }, (_, i) => ({
       questionId: ALL_QUESTIONS[i].id,
       numericValue: 3,
       timestamp: '',
     }));
 
-    expect(shouldStopQuestionnaire(thirtyResponses)).toBe(true);
-    const nextQ = getNextAdaptiveQuestion(thirtyResponses);
+    expect(shouldStopQuestionnaire(nineteenResponses)).toBe(false);
+    expect(getNextAdaptiveQuestion(nineteenResponses)).not.toBeNull();
+
+    // At 25 questions, it hits the hard limit and stops
+    const twentyFiveResponses: UserResponse[] = Array.from({ length: 25 }, (_, i) => ({
+      questionId: ALL_QUESTIONS[i].id,
+      numericValue: 3,
+      timestamp: '',
+    }));
+
+    expect(shouldStopQuestionnaire(twentyFiveResponses)).toBe(true);
+    const nextQ = getNextAdaptiveQuestion(twentyFiveResponses);
     expect(nextQ).toBeNull();
   });
 });
 
 describe('5. Gemini Fallback Resilience', () => {
+  it('ranks only genuine interest domains instead of unconditionally dumping all 20', () => {
+    // Student only demonstrated interest in Software Engineering (Q021) and AI (Q071)
+    const responses: UserResponse[] = [
+      { questionId: 'Q021', numericValue: 4, timestamp: '' }, // Software: 100%
+      { questionId: 'Q071', numericValue: 3, timestamp: '' }, // AI: 75%
+    ];
+
+    const result = getFallbackDomainRankings(responses);
+    expect(result.rankings.length).toBeGreaterThanOrEqual(1);
+    // Should NOT have all 20 domains!
+    expect(result.rankings.length).toBeLessThan(20);
+    expect(result.rankings.some((r) => r.domainId === 'software_web')).toBe(true);
+  });
+
   it('generates rich deterministic explanations when Gemini is unavailable', () => {
     const topDomains = ['software_web', 'artificial_intelligence', 'cloud_devops'] as const;
     const scores = { software_web: 90, artificial_intelligence: 80, cloud_devops: 75 };

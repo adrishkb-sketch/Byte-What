@@ -44,15 +44,16 @@ export async function POST(req: NextRequest) {
     const currentResponses = await Repository.getResponses(data.sessionId);
     await Repository.upsertSession(data.sessionId, currentResponses.length, 'in_progress');
 
-    // Check adaptive stopping (capped at 25 questions)
-    const isReadyToComplete = shouldStopQuestionnaire(currentResponses);
-    const canFinishEarly = currentResponses.length >= 10;
+    // Check adaptive stopping (capped strictly at 20-25 questions)
+    const shouldStop = shouldStopQuestionnaire(currentResponses);
+    const isReadyToComplete = currentResponses.length >= 25 || (currentResponses.length >= 20 && shouldStop);
+    const canFinishEarly = currentResponses.length >= 20;
 
     let nextQuestion: Question | null = null;
 
     if (!isReadyToComplete) {
       // 1. Gather candidate pool from 520-question bank
-      const candidates = getAdaptiveCandidates(currentResponses, 15);
+      const candidates = getAdaptiveCandidates(currentResponses, 20);
 
       // 2. Try Gemini adaptive question selection using rotated API keys
       try {
@@ -70,11 +71,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Never mark as ready to complete before 20 questions are answered
+    const finalizedReady = currentResponses.length >= 25 || (currentResponses.length >= 20 && (isReadyToComplete || !nextQuestion));
+
     return NextResponse.json({
       success: true,
       data: {
         questionsAnswered: currentResponses.length,
-        isReadyToComplete: isReadyToComplete || !nextQuestion,
+        isReadyToComplete: finalizedReady,
         canFinishEarly,
         nextQuestion,
       },
