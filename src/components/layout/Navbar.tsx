@@ -8,6 +8,7 @@ import { Menu, X, BarChart2, Sparkles, Home, ShieldCheck } from 'lucide-react';
 const NAV_LINKS = [
   { href: '/', label: 'Home', icon: Home },
   { href: '/analytics', label: 'Analytics', icon: BarChart2 },
+  { href: '/account', label: 'My Account', icon: Sparkles },
   { href: '/admin', label: 'Admin Portal', icon: ShieldCheck },
 ];
 
@@ -30,10 +31,10 @@ export const Navbar: React.FC = () => {
           </div>
           <div className="flex flex-col">
             <span className="text-base font-extrabold tracking-wider text-white group-hover:text-primary transition-colors flex items-center gap-1.5">
-              <span>BYTEMONK</span>
+              <span>BYTE WHAT</span>
             </span>
-            <span className="text-[9px] text-primary font-mono tracking-wider uppercase">
-              GCECT Innovation
+            <span className="text-[9px] text-primary/80 font-mono tracking-wider">
+              An initiative under ByteMonk
             </span>
           </div>
         </Link>

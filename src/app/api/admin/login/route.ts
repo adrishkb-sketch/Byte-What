@@ -51,3 +51,4 @@ export async function DELETE() {
   response.cookies.delete('bytemonk_admin_token');
   return response;
 }
+

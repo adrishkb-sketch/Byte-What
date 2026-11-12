@@ -4,17 +4,18 @@ import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 
 export const metadata: Metadata = {
-  title: 'BYTE WHAT — Technology-Interest Discovery & Student Collaboration',
+  title: 'BYTE WHAT — An initiative under ByteMonk | GCECT Technology Platform',
   description:
-    'Discover genuine engineering and technology interests through an adaptive 200-questionnaire engine, explore 20 domains, find student collaborators, and build projects at GCECT.',
+    'BYTE WHAT is a technology-interest discovery and student collaboration platform, an initiative under ByteMonk at Government College of Engineering and Ceramic Technology (GCECT).',
   keywords: [
     'BYTE WHAT',
+    'ByteMonk',
     'GCECT',
     'Government College of Engineering and Ceramic Technology',
     'Tech Discovery',
     'Engineering Interests',
     'Adaptive Questionnaire',
-    'ByteMates',
+    'Chrome Built-in AI',
   ],
 };
 

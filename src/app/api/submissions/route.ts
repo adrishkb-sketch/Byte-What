@@ -20,7 +20,7 @@ const SubmissionSchema = z.object({
   pathChosen: z.enum(['self_selected', 'questionnaire']),
   rankings: z.array(RankingItemSchema).min(1),
   isVerified: z.boolean().optional(),
-  verificationMethod: z.enum(['email_otp', 'id_card_ai', 'oauth']).optional(),
+  verificationMethod: z.enum(['email_otp', 'manual_id_card', 'id_card_ai', 'oauth']).optional(),
   idCardUrl: z.string().optional(),
   idCardAiVerification: z.any().optional(),
 });

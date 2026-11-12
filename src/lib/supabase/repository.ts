@@ -48,7 +48,7 @@ export const Repository = {
     pathChosen: 'self_selected' | 'questionnaire';
     rankings: StudentDomainRank[];
     isVerified?: boolean;
-    verificationMethod?: 'email_otp' | 'id_card_ai' | 'oauth';
+    verificationMethod?: 'email_otp' | 'manual_id_card' | 'id_card_ai' | 'oauth';
     idCardUrl?: string;
     idCardAiVerification?: any;
     isValid?: boolean;
@@ -649,7 +649,10 @@ export const Repository = {
       try {
         await sql`
           UPDATE student_submissions
-          SET is_valid = ${isValid}, admin_notes = ${adminNotes || null}, updated_at = NOW()
+          SET is_valid = ${isValid},
+              is_verified = CASE WHEN ${isValid} = true THEN true ELSE is_verified END,
+              admin_notes = ${adminNotes || null},
+              updated_at = NOW()
           WHERE id = ${id}
         `;
       } catch (err) {
@@ -659,6 +662,7 @@ export const Repository = {
     const mem = memoryStore.submissions.get(id);
     if (mem) {
       mem.isValid = isValid;
+      if (isValid) mem.isVerified = true;
       if (adminNotes !== undefined) mem.adminNotes = adminNotes;
       mem.updatedAt = new Date().toISOString();
     }
@@ -821,5 +825,293 @@ export const Repository = {
     }
     if (otpCode === '123456' || otpCode === '654321') return true;
     return false;
+  },
+
+  /**
+   * Student Authentication: Register a new student account
+   */
+  async registerStudent(data: {
+    name: string;
+    email: string;
+    password: string;
+    department: string;
+    year: string;
+    semester: number;
+    phoneNumber: string;
+    verificationMethod: 'email_otp' | 'manual_id_card';
+    idCardUrl?: string;
+    isVerified?: boolean;
+  }): Promise<{ student: StudentSubmission; token: string }> {
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = crypto.scryptSync(data.password, salt, 64).toString('hex');
+    const passwordHash = `${salt}:${hash}`;
+
+    const isVerified = Boolean(data.isVerified);
+    // New accounts are pending admin approval by default
+    const isValid = false;
+
+    let studentId = '';
+    const now = new Date().toISOString();
+
+    if (isPostgresConfigured && sql) {
+      try {
+        const rows = await sql`
+          INSERT INTO student_submissions (
+            name, email, password_hash, department, year, semester, phone_number,
+            path_chosen, rankings, is_verified, verification_method, id_card_url,
+            is_valid, created_at, updated_at
+          )
+          VALUES (
+            ${data.name.trim()},
+            ${data.email.trim().toLowerCase()},
+            ${passwordHash},
+            ${data.department},
+            ${data.year},
+            ${data.semester},
+            ${data.phoneNumber.trim()},
+            'self_selected',
+            '[]'::jsonb,
+            ${isVerified},
+            ${data.verificationMethod},
+            ${data.idCardUrl || null},
+            ${isValid},
+            NOW(),
+            NOW()
+          )
+          RETURNING id, name, email, department, year, semester, phone_number, is_verified, verification_method, id_card_url, is_valid, rankings, created_at, updated_at
+        `;
+        if (rows && rows[0]) {
+          studentId = String(rows[0].id);
+        }
+      } catch (err: any) {
+        if (err.message?.includes('unique') || err.message?.includes('duplicate')) {
+          throw new Error('An account with this email already exists. Please log in.');
+        }
+        throw err;
+      }
+    }
+
+    if (!studentId) {
+      studentId = `stud-${Date.now()}`;
+    }
+
+    const student: StudentSubmission = {
+      id: studentId,
+      name: data.name,
+      email: data.email.toLowerCase(),
+      department: data.department,
+      year: data.year,
+      semester: data.semester,
+      phoneNumber: data.phoneNumber,
+      pathChosen: 'self_selected',
+      rankings: [],
+      isVerified,
+      verificationMethod: data.verificationMethod,
+      idCardUrl: data.idCardUrl,
+      isValid,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    memoryStore.submissions.set(studentId, student);
+
+    const token = await this.createStudentSession(studentId);
+    return { student, token };
+  },
+
+  /**
+   * Student Authentication: Verify credentials and issue session
+   */
+  async authenticateStudent(email: string, password: string): Promise<{ student: StudentSubmission; token: string }> {
+    const cleanEmail = email.trim().toLowerCase();
+    let studentRow: any = null;
+
+    if (isPostgresConfigured && sql) {
+      try {
+        const rows = await sql`
+          SELECT * FROM student_submissions WHERE LOWER(email) = ${cleanEmail} LIMIT 1
+        `;
+        if (rows && rows[0]) {
+          studentRow = rows[0];
+        }
+      } catch (err) {
+        console.error('authenticateStudent postgres exception:', err);
+      }
+    }
+
+    if (!studentRow) {
+      studentRow = Array.from(memoryStore.submissions.values()).find((s) => s.email?.toLowerCase() === cleanEmail);
+    }
+
+    if (!studentRow || !studentRow.password_hash) {
+      throw new Error('No account found with this email, or password not set. Please register.');
+    }
+
+    // Verify password hash
+    const [salt, key] = studentRow.password_hash.split(':');
+    if (!salt || !key) {
+      throw new Error('Invalid stored password format.');
+    }
+    const keyBuffer = Buffer.from(key, 'hex');
+    const derivedKey = crypto.scryptSync(password, salt, 64);
+    if (!crypto.timingSafeEqual(keyBuffer, derivedKey)) {
+      throw new Error('Incorrect password. Please try again.');
+    }
+
+    const student: StudentSubmission = {
+      id: String(studentRow.id),
+      name: studentRow.name,
+      email: studentRow.email,
+      department: studentRow.department,
+      year: studentRow.year,
+      semester: Number(studentRow.semester) || 1,
+      phoneNumber: studentRow.phone_number,
+      pathChosen: studentRow.path_chosen || 'self_selected',
+      rankings: typeof studentRow.rankings === 'string' ? JSON.parse(studentRow.rankings) : (studentRow.rankings || []),
+      isVerified: Boolean(studentRow.is_verified),
+      verificationMethod: studentRow.verification_method || 'manual_id_card',
+      idCardUrl: studentRow.id_card_url || undefined,
+      isValid: Boolean(studentRow.is_valid),
+      adminNotes: studentRow.admin_notes || undefined,
+      createdAt: studentRow.created_at,
+      updatedAt: studentRow.updated_at,
+    };
+
+    const token = await this.createStudentSession(student.id);
+    return { student, token };
+  },
+
+  /**
+   * Create student session token stored in PostgreSQL
+   */
+  async createStudentSession(studentId: string): Promise<string> {
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
+
+    if (isPostgresConfigured && sql) {
+      try {
+        await sql`
+          INSERT INTO student_sessions (token, student_id, expires_at)
+          VALUES (${token}, ${studentId}, ${expiresAt})
+        `;
+      } catch (err) {
+        console.error('createStudentSession error:', err);
+      }
+    }
+    return token;
+  },
+
+  /**
+   * Get student from session token
+   */
+  async getStudentBySessionToken(token: string): Promise<StudentSubmission | null> {
+    if (!token) return null;
+
+    if (isPostgresConfigured && sql) {
+      try {
+        const rows = await sql`
+          SELECT s.* 
+          FROM student_sessions sess
+          JOIN student_submissions s ON s.id = sess.student_id
+          WHERE sess.token = ${token} AND sess.expires_at > NOW()
+          LIMIT 1
+        `;
+        if (rows && rows[0]) {
+          const row = rows[0];
+          return {
+            id: String(row.id),
+            name: row.name,
+            email: row.email,
+            department: row.department,
+            year: row.year,
+            semester: Number(row.semester) || 1,
+            phoneNumber: row.phone_number,
+            pathChosen: row.path_chosen || 'self_selected',
+            rankings: typeof row.rankings === 'string' ? JSON.parse(row.rankings) : (row.rankings || []),
+            isVerified: Boolean(row.is_verified),
+            verificationMethod: row.verification_method || 'manual_id_card',
+            idCardUrl: row.id_card_url || undefined,
+            idCardAiVerification: row.id_card_ai_verification || undefined,
+            isValid: Boolean(row.is_valid),
+            adminNotes: row.admin_notes || undefined,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+          };
+        }
+      } catch (err) {
+        console.error('getStudentBySessionToken error:', err);
+      }
+    }
+
+    return null;
+  },
+
+  /**
+   * Invalidate student session token (logout)
+   */
+  async invalidateStudentSession(token: string): Promise<void> {
+    if (!token) return;
+    if (isPostgresConfigured && sql) {
+      try {
+        await sql`DELETE FROM student_sessions WHERE token = ${token}`;
+      } catch (err) {
+        console.error('invalidateStudentSession error:', err);
+      }
+    }
+  },
+
+  /**
+   * Update student domain rankings (STRICT: only allowed if isValid === true)
+   */
+  async updateStudentRankings(
+    studentId: string,
+    rankings: StudentDomainRank[],
+    pathChosen: 'self_selected' | 'questionnaire' = 'self_selected'
+  ): Promise<StudentSubmission> {
+    if (isPostgresConfigured && sql) {
+      const rows = await sql`
+        SELECT is_valid FROM student_submissions WHERE id = ${studentId}
+      `;
+      if (!rows || rows.length === 0) {
+        throw new Error('Student account not found.');
+      }
+      if (!rows[0].is_valid) {
+        throw new Error('Your account is pending admin verification. You cannot submit interests until approved.');
+      }
+
+      const updated = await sql`
+        UPDATE student_submissions
+        SET rankings = ${JSON.stringify(rankings)},
+            path_chosen = ${pathChosen},
+            updated_at = NOW()
+        WHERE id = ${studentId}
+        RETURNING *
+      `;
+      if (updated && updated[0]) {
+        const row = updated[0];
+        const result: StudentSubmission = {
+          id: String(row.id),
+          name: row.name,
+          email: row.email,
+          department: row.department,
+          year: row.year,
+          semester: Number(row.semester) || 1,
+          phoneNumber: row.phone_number,
+          pathChosen: row.path_chosen,
+          rankings: typeof row.rankings === 'string' ? JSON.parse(row.rankings) : (row.rankings || []),
+          isVerified: Boolean(row.is_verified),
+          verificationMethod: row.verification_method,
+          idCardUrl: row.id_card_url,
+          isValid: Boolean(row.is_valid),
+          adminNotes: row.admin_notes,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        };
+        memoryStore.submissions.set(studentId, result);
+        return result;
+      }
+    }
+
+    throw new Error('Failed to update rankings.');
   },
 };

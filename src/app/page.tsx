@@ -55,13 +55,23 @@ export default function HomePage() {
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="text-4xl sm:text-6xl font-black tracking-tight text-white mb-3"
+          className="text-4xl sm:text-6xl font-black tracking-tight text-white mb-2"
         >
           BYTE
           <span className="text-primary ml-2 drop-shadow-[0_0_25px_rgba(0,240,255,0.4)]">
-            MONK
+            WHAT
           </span>
         </motion.h1>
+
+        {/* Initiative Subtitle */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 border border-primary/25 text-xs text-primary font-mono tracking-wider uppercase mb-4"
+        >
+          <span>An initiative under ByteMonk</span>
+        </motion.div>
 
         {/* Minimal Subtitle */}
         <motion.p

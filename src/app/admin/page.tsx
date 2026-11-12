@@ -595,14 +595,14 @@ export default function AdminDashboardPage() {
         )}
       </div>
 
-      {/* MODAL 1: Inspect College ID Card & AI Vision Results */}
+      {/* MODAL 1: Inspect Physical ID Card Scan (Manual Review) */}
       {inspectCardStudent && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="glass-panel p-6 sm:p-8 rounded-3xl max-w-lg w-full border border-primary/30 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-white/[0.08] mb-4">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-primary" />
-                <span>AI College ID Card Inspection</span>
+                <ShieldCheck className="w-4 h-4 text-primary" />
+                <span>Manual GCECT College ID Card Inspection</span>
               </h3>
               <button
                 onClick={() => setInspectCardStudent(null)}
@@ -614,52 +614,49 @@ export default function AdminDashboardPage() {
 
             <div className="space-y-4">
               {inspectCardStudent.idCardUrl ? (
-                <div className="rounded-2xl overflow-hidden border border-white/[0.15] bg-black/40">
+                <div className="rounded-2xl overflow-hidden border border-white/[0.15] bg-black/40 p-2 flex items-center justify-center">
                   <img
                     src={inspectCardStudent.idCardUrl}
-                    alt="GCECT ID Card"
-                    className="w-full object-contain max-h-64"
+                    alt="GCECT Student ID Card Scan"
+                    className="w-full object-contain max-h-72 rounded-xl"
                   />
                 </div>
               ) : (
-                <p className="text-xs text-text-muted">No ID card image attached.</p>
+                <div className="p-8 text-center bg-white/[0.02] rounded-2xl border border-dashed border-white/[0.1]">
+                  <p className="text-xs text-text-muted">No ID card image attached. (Registered via Email OTP)</p>
+                </div>
               )}
 
-              {/* AI Detection Summary */}
+              {/* Student Details Summary for Manual Cross-Checking */}
               <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.08] space-y-2 text-xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-text-muted">AI Authenticity Verdict:</span>
-                  <span className="font-bold text-accent-emerald">
-                    {inspectCardStudent.idCardAiVerification?.isGcectCard ? '✓ Verified GCECT Card' : 'Manual Review Needed'}
+                  <span className="text-text-muted">Student Name:</span>
+                  <span className="font-bold text-white">{inspectCardStudent.name}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-text-muted">College Email:</span>
+                  <span className="font-mono text-white">{inspectCardStudent.email || 'N/A'}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-text-muted">Department / Stream:</span>
+                  <span className="font-semibold text-accent-cyan">{inspectCardStudent.department}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-text-muted">Academic Year & Sem:</span>
+                  <span className="font-semibold text-white">
+                    {inspectCardStudent.year} • Semester {inspectCardStudent.semester || 1}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-text-muted">Confidence Score:</span>
-                  <span className="font-mono font-bold text-primary">
-                    {inspectCardStudent.idCardAiVerification?.confidence || 85}%
+                  <span className="text-text-muted">Phone Number:</span>
+                  <span className="font-mono text-accent-emerald">{inspectCardStudent.phoneNumber}</span>
+                </div>
+                <div className="flex items-center justify-between pt-1 border-t border-white/[0.06]">
+                  <span className="text-text-muted">Verification Method:</span>
+                  <span className="text-white font-medium">
+                    {inspectCardStudent.verificationMethod === 'email_otp' ? 'Institutional Email OTP' : 'Manual ID Card Photo'}
                   </span>
                 </div>
-                {inspectCardStudent.idCardAiVerification?.detectedName && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-text-muted">Detected Name:</span>
-                    <span className="font-semibold text-white">
-                      {inspectCardStudent.idCardAiVerification.detectedName}
-                    </span>
-                  </div>
-                )}
-                {inspectCardStudent.idCardAiVerification?.detectedRoll && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-text-muted">Detected Roll / ID:</span>
-                    <span className="font-mono text-white">
-                      {inspectCardStudent.idCardAiVerification.detectedRoll}
-                    </span>
-                  </div>
-                )}
-                {inspectCardStudent.idCardAiVerification?.reasoning && (
-                  <p className="text-[11px] text-text-secondary pt-1 border-t border-white/[0.06]">
-                    <strong>AI Notes:</strong> {inspectCardStudent.idCardAiVerification.reasoning}
-                  </p>
-                )}
               </div>
 
               {/* Modal Actions */}
@@ -679,7 +676,7 @@ export default function AdminDashboardPage() {
                   }}
                   className="px-5 py-2 rounded-xl text-xs font-bold text-[#050811] bg-primary hover:bg-primary-hover shadow-md shadow-primary/20"
                 >
-                  Approve & Validate Profile
+                  Approve & Validate Student
                 </button>
               </div>
             </div>

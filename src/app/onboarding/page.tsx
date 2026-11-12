@@ -83,20 +83,45 @@ export default function OnboardingPage() {
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    const existing = getStudentInfo();
-    if (existing) {
-      setName(existing.name || '');
-      if (existing.email) setEmail(existing.email);
-      if (existing.department) setDepartment(existing.department);
-      if (existing.year) setYear(existing.year);
-      if (existing.semester) setSemester(existing.semester);
-      setPhoneNumber(existing.phoneNumber || '');
-      if (existing.isVerified) {
-        if (existing.verificationMethod === 'email_otp') setEmailVerified(true);
-        if (existing.verificationMethod === 'id_card_ai') setIdCardVerified(true);
+    async function checkAuthAndProfile() {
+      try {
+        const res = await fetch('/api/auth/me');
+        const json = await res.json();
+        if (json.success && json.data) {
+          const s = json.data;
+          if (!s.isValid) {
+            router.push('/account');
+            return;
+          }
+          setName(s.name);
+          setEmail(s.email || '');
+          setDepartment(s.department);
+          setYear(s.year);
+          setSemester(s.semester || 1);
+          setPhoneNumber(s.phoneNumber || '');
+          setEmailVerified(true);
+
+          if (s.rankings && s.rankings.length > 0) {
+            const ranks: Record<DomainId, number> = {} as any;
+            const ids: DomainId[] = [];
+            const sorted = [...s.rankings].sort((a: any, b: any) => a.rank - b.rank);
+            sorted.forEach((r: any) => {
+              ids.push(r.domainId as DomainId);
+              ranks[r.domainId as DomainId] = r.rank;
+            });
+            setOrderedSelectedIds(ids);
+            setDomainRanks(ranks);
+          }
+          setStep('choice');
+        } else {
+          router.push('/login?redirect=/onboarding');
+        }
+      } catch {
+        router.push('/login?redirect=/onboarding');
       }
     }
-  }, []);
+    checkAuthAndProfile();
+  }, [router]);
 
   function handleYearChange(newYear: string) {
     setYear(newYear);
@@ -326,26 +351,34 @@ export default function OnboardingPage() {
         rank: domainRanks[domId] !== undefined ? domainRanks[domId] : 20,
       }));
 
-      const isVerified = verificationMethod === 'email_otp' ? emailVerified : idCardVerified;
-
-      const res = await fetch('/api/submissions', {
+      let res = await fetch('/api/student/rankings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: name.trim(),
-          email: email.trim() || undefined,
-          department,
-          year,
-          semester,
-          phoneNumber: phoneNumber.trim(),
-          pathChosen: 'self_selected',
           rankings: rankingsPayload,
-          isVerified,
-          verificationMethod,
-          idCardUrl: idCardPreview || undefined,
-          idCardAiVerification: aiVerificationDetails || undefined,
+          pathChosen: 'self_selected',
         }),
       });
+
+      if (!res.ok) {
+        res = await fetch('/api/submissions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: name.trim(),
+            email: email.trim() || undefined,
+            department,
+            year,
+            semester,
+            phoneNumber: phoneNumber.trim(),
+            pathChosen: 'self_selected',
+            rankings: rankingsPayload,
+            isVerified: true,
+            verificationMethod,
+            idCardUrl: idCardPreview || undefined,
+          }),
+        });
+      }
 
       const json = await res.json();
       if (json.success) {
@@ -943,10 +976,16 @@ export default function OnboardingPage() {
                 Your phone number is saved for automated notifications whenever workshops or peer sessions in your selected domains are scheduled.
               </div>
             </div>
-            <div className="flex justify-center">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+              <button
+                onClick={() => router.push('/account')}
+                className="w-full sm:w-auto px-6 py-3.5 rounded-xl font-bold text-white bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.1] transition-all text-xs flex items-center justify-center gap-2"
+              >
+                <span>Go to My Account</span>
+              </button>
               <button
                 onClick={() => router.push('/analytics')}
-                className="px-8 py-3.5 rounded-xl font-bold text-[#050811] bg-primary hover:bg-primary-hover transition-all text-sm shadow-lg shadow-primary/25 flex items-center gap-2"
+                className="w-full sm:w-auto px-8 py-3.5 rounded-xl font-bold text-[#050811] bg-primary hover:bg-primary-hover transition-all text-xs shadow-lg shadow-primary/25 flex items-center justify-center gap-2"
               >
                 <span>View Public Analytics</span>
                 <ArrowRight className="w-4 h-4" />

@@ -25,6 +25,8 @@ import { Question, DomainId, StudentDomainRank, UserResponse } from '@/types';
 import { LIKERT_OPTIONS } from '@/data/questions';
 import { DOMAINS, DOMAIN_MAP } from '@/data/domains';
 import { DomainIcon } from '@/components/ui/DomainIcon';
+import { ChromeAiBadge } from '@/components/ui/ChromeAiBadge';
+import { scrubPIILocally } from '@/lib/ai/chrome-ai';
 
 export default function QuestionnairePage() {
   const router = useRouter();
@@ -291,24 +293,36 @@ export default function QuestionnairePage() {
         rank: reviewRanks[domId] !== undefined ? reviewRanks[domId] : 20,
       }));
 
-      await fetch('/api/submissions', {
+      // Try authenticated student ranking endpoint first
+      let res = await fetch('/api/student/rankings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: studentInfo?.name || 'Anonymous Student',
-          email: studentInfo?.email || undefined,
-          department: studentInfo?.department || 'Engineering',
-          year: studentInfo?.year || '1st Year',
-          semester: studentInfo?.semester || 1,
-          phoneNumber: studentInfo?.phoneNumber || 'N/A',
-          pathChosen: 'questionnaire',
           rankings: rankingsPayload,
-          isVerified: studentInfo?.isVerified || false,
-          verificationMethod: studentInfo?.verificationMethod || 'email_otp',
-          idCardUrl: studentInfo?.idCardUrl || undefined,
-          idCardAiVerification: studentInfo?.idCardAiVerification || undefined,
+          pathChosen: 'questionnaire',
         }),
       });
+
+      if (!res.ok) {
+        // Fall back to general submission
+        await fetch('/api/submissions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: studentInfo?.name || 'GCECT Student',
+            email: studentInfo?.email || undefined,
+            department: studentInfo?.department || 'Engineering',
+            year: studentInfo?.year || '1st Year',
+            semester: studentInfo?.semester || 1,
+            phoneNumber: studentInfo?.phoneNumber || 'N/A',
+            pathChosen: 'questionnaire',
+            rankings: rankingsPayload,
+            isVerified: true,
+            verificationMethod: studentInfo?.verificationMethod || 'email_otp',
+            idCardUrl: studentInfo?.idCardUrl || undefined,
+          }),
+        });
+      }
 
       setIsSubmitted(true);
     } catch (err) {
@@ -724,23 +738,26 @@ export default function QuestionnairePage() {
       {/* Free Text Notes Modal */}
       {showNotesModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-panel p-6 sm:p-8 rounded-3xl max-w-md w-full">
-            <h3 className="text-base font-bold text-white mb-2">Optional Notes</h3>
+          <div className="glass-panel p-6 sm:p-8 rounded-3xl max-w-lg w-full bg-[#080E1D] border border-white/[0.1]">
+            <h3 className="text-base font-bold text-white mb-1">Personal Engineering Notes</h3>
             <p className="text-xs text-text-secondary mb-4 leading-relaxed">
-              Add any specific technologies, ideas, or projects you are curious about to help refine your results:
+              Add any specific technologies, ideas, or projects you are passionate about to refine your interest rankings:
             </p>
             <textarea
               rows={4}
               value={freeTextNotes}
               onChange={(e) => setFreeTextNotes(e.target.value)}
-              placeholder="e.g., I loved working on a C++ embedded Arduino project in school..."
-              className="w-full bg-[#080D18] border border-white/[0.1] rounded-xl p-3 text-xs text-white placeholder-text-muted focus:outline-none focus:border-primary resize-none mb-4"
+              placeholder="e.g., I love working on C++ firmware, robotic sensors, and IoT devices..."
+              className="w-full bg-[#050811] border border-white/[0.12] rounded-xl p-3.5 text-xs text-white placeholder-text-muted focus:outline-none focus:border-[#00F0FF] resize-none mb-3 font-sans"
             />
+            <div className="mb-4">
+              <ChromeAiBadge />
+            </div>
             <div className="flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setShowNotesModal(false)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-primary hover:bg-primary-hover"
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-[#050811] bg-[#00F0FF] hover:bg-[#00D2DF] shadow-md shadow-[#00F0FF]/25"
               >
                 Save Notes
               </button>

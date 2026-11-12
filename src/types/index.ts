@@ -122,7 +122,7 @@ export interface StudentSubmission {
   pathChosen: 'self_selected' | 'questionnaire';
   rankings: StudentDomainRank[];
   isVerified?: boolean;
-  verificationMethod?: 'email_otp' | 'id_card_ai' | 'oauth';
+  verificationMethod?: 'email_otp' | 'manual_id_card' | 'id_card_ai' | 'oauth';
   idCardUrl?: string;
   idCardAiVerification?: {
     isGcectCard: boolean;
