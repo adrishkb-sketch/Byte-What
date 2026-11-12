@@ -49,11 +49,12 @@ const DEPARTMENTS = [
 ];
 
 const YEARS = ['All', '1st Year', '2nd Year', '3rd Year', '4th Year'];
+const SEMESTERS = ['All', '1', '2', '3', '4', '5', '6', '7', '8'];
 
 const CATEGORY_COLORS = [
-  '#3B82F6', // Blue
+  '#00F0FF', // ByteMonk Cyan
   '#8B5CF6', // Violet
-  '#06B6D4', // Cyan
+  '#3B82F6', // Blue
   '#10B981', // Emerald
   '#F59E0B', // Amber
   '#EC4899', // Pink
@@ -65,6 +66,7 @@ export default function AnalyticsPage() {
   const [selectedDomainId, setSelectedDomainId] = useState<DomainId>('software_web');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('All');
   const [selectedYear, setSelectedYear] = useState<string>('All');
+  const [selectedSemester, setSelectedSemester] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const [students, setStudents] = useState<(StudentSubmission & { targetDomainRank?: number })[]>([]);
@@ -86,9 +88,10 @@ export default function AnalyticsPage() {
     async function fetchSubmissions() {
       try {
         setLoading(true);
-        let url = `/api/submissions?domainId=${selectedDomainId}`;
+        let url = `/api/submissions?domainId=${selectedDomainId}&isValid=true`;
         if (selectedDepartment !== 'All') url += `&department=${encodeURIComponent(selectedDepartment)}`;
         if (selectedYear !== 'All') url += `&year=${encodeURIComponent(selectedYear)}`;
+        if (selectedSemester !== 'All') url += `&semester=${encodeURIComponent(selectedSemester)}`;
         if (searchQuery.trim()) url += `&search=${encodeURIComponent(searchQuery.trim())}`;
 
         const res = await fetch(url);
@@ -104,13 +107,18 @@ export default function AnalyticsPage() {
     }
 
     fetchSubmissions();
-  }, [selectedDomainId, selectedDepartment, selectedYear, searchQuery]);
+  }, [selectedDomainId, selectedDepartment, selectedYear, selectedSemester, searchQuery]);
 
   // Fetch full aggregate analytics for comparison charts
   useEffect(() => {
     async function fetchAnalytics() {
       try {
-        const res = await fetch('/api/analytics');
+        const params = new URLSearchParams();
+        if (selectedDepartment !== 'All') params.set('department', selectedDepartment);
+        if (selectedYear !== 'All') params.set('year', selectedYear);
+        if (selectedSemester !== 'All') params.set('semester', selectedSemester);
+        const qs = params.toString();
+        const res = await fetch(`/api/analytics${qs ? `?${qs}` : ''}`);
         const json = await res.json();
         if (json.success) {
           setAnalyticsData(json.data);
@@ -120,7 +128,7 @@ export default function AnalyticsPage() {
       }
     }
     fetchAnalytics();
-  }, [students.length]);
+  }, [students.length, selectedDepartment, selectedYear, selectedSemester]);
 
   function handleEyeClick(studentId: string) {
     if (unlockedPhones[studentId]) {
@@ -170,6 +178,11 @@ export default function AnalyticsPage() {
   const yearChartData = Object.entries(analyticsData?.yearBreakdown || {}).map(([year, count]) => ({
     year,
     students: count as number,
+  }));
+
+  const semesterChartData = [1, 2, 3, 4, 5, 6, 7, 8].map((s) => ({
+    semester: `Sem ${s}`,
+    students: Number(analyticsData?.semesterBreakdown?.[s] || 0),
   }));
 
   // Category grouping
@@ -238,7 +251,7 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Filter Toolbar (Department, Year, Search) */}
+      {/* Filter Toolbar (Department, Year, Semester, Search) */}
       <div className="glass-panel p-4 rounded-2xl mb-8 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
@@ -268,6 +281,22 @@ export default function AnalyticsPage() {
               {YEARS.map((y) => (
                 <option key={y} value={y} className="bg-[#080D18] text-white">
                   {y}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Layers className="w-3.5 h-3.5 text-accent-cyan" />
+            <span className="text-xs text-text-muted">Semester:</span>
+            <select
+              value={selectedSemester}
+              onChange={(e) => setSelectedSemester(e.target.value)}
+              className="bg-[#080D18] border border-white/[0.1] rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-primary"
+            >
+              {SEMESTERS.map((sem) => (
+                <option key={sem} value={sem} className="bg-[#080D18] text-white">
+                  {sem === 'All' ? 'All Semesters' : `Semester ${sem}`}
                 </option>
               ))}
             </select>
@@ -381,6 +410,20 @@ export default function AnalyticsPage() {
                           <Calendar className="w-3 h-3 text-accent-violet" />
                           <span>{student.year}</span>
                         </span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1 font-semibold text-accent-cyan">
+                          <Layers className="w-3 h-3 text-accent-cyan" />
+                          <span>Sem {student.semester || 1}</span>
+                        </span>
+                        {student.isVerified && (
+                          <>
+                            <span>•</span>
+                            <span className="flex items-center gap-1 text-accent-emerald font-semibold">
+                              <ShieldCheck className="w-3 h-3" />
+                              <span>Verified</span>
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -532,8 +575,8 @@ export default function AnalyticsPage() {
           )}
         </div>
 
-        {/* Grid of Two Charts: Department Breakdown & Academic Year Progression */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        {/* Grid of Three Charts: Department, Semester Progression, and Categories */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {/* Department Breakdown */}
           <div className="glass-panel p-6 rounded-3xl">
             <h3 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
@@ -567,6 +610,43 @@ export default function AnalyticsPage() {
             ) : (
               <div className="h-48 flex items-center justify-center text-xs text-text-muted">
                 No department data available yet.
+              </div>
+            )}
+          </div>
+
+          {/* Semester Distribution */}
+          <div className="glass-panel p-6 rounded-3xl">
+            <h3 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-[#00F0FF]" />
+              <span>Semester Distribution (Sem 1–8)</span>
+            </h3>
+            <p className="text-xs text-text-secondary mb-4">
+              Validated student representation across semesters.
+            </p>
+
+            {isMounted && semesterChartData.length > 0 ? (
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={semesterChartData} margin={{ top: 10, right: 10, left: -20, bottom: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                    <XAxis dataKey="semester" stroke="#94A3B8" fontSize={10} />
+                    <YAxis stroke="#94A3B8" fontSize={10} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#111827',
+                        borderColor: '#00F0FF40',
+                        borderRadius: '0.75rem',
+                        color: '#F8FAFC',
+                        fontSize: '11px',
+                      }}
+                    />
+                    <Bar dataKey="students" fill="#00F0FF" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="h-48 flex items-center justify-center text-xs text-text-muted">
+                No semester distribution data available yet.
               </div>
             )}
           </div>

@@ -3,10 +3,16 @@ const STUDENT_INFO_KEY = 'byte_what_student_info';
 
 export interface StudentRegistrationInfo {
   name: string;
+  email?: string;
   department: string;
   year: string;
+  semester: number;
   phoneNumber: string;
   pathChosen?: 'self_selected' | 'questionnaire';
+  isVerified?: boolean;
+  verificationMethod?: 'email_otp' | 'id_card_ai' | 'oauth';
+  idCardUrl?: string;
+  idCardAiVerification?: any;
 }
 
 /**

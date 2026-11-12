@@ -16,6 +16,13 @@ import {
   Equal,
   Check,
   GripVertical,
+  Mail,
+  Upload,
+  Camera,
+  ShieldCheck,
+  Loader2,
+  AlertCircle,
+  FileText,
 } from 'lucide-react';
 import { DOMAINS, DOMAIN_MAP } from '@/data/domains';
 import { DomainId, StudentDomainRank } from '@/types';
@@ -34,21 +41,42 @@ const DEPARTMENTS = [
 ];
 
 const YEARS = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
+const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 export default function OnboardingPage() {
   const router = useRouter();
 
-  // Step 1: Student Details
+  // Step 1: Student Details & Verification
   const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [department, setDepartment] = useState(DEPARTMENTS[0]);
   const [year, setYear] = useState(YEARS[0]);
+  const [semester, setSemester] = useState<number>(1);
   const [phoneNumber, setPhoneNumber] = useState('');
+
+  // Verification options: 'email' (College Email + OTP) vs 'id_card' (Upload ID card + AI Vision)
+  const [verificationMethod, setVerificationMethod] = useState<'email_otp' | 'id_card_ai'>('email_otp');
+
+  // Email OTP state
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [simulatedOtp, setSimulatedOtp] = useState('');
+  const [otpMessage, setOtpMessage] = useState('');
+
+  // College ID Card AI Vision state
+  const [idCardFile, setIdCardFile] = useState<File | null>(null);
+  const [idCardPreview, setIdCardPreview] = useState<string>('');
+  const [verifyingIdCard, setVerifyingIdCard] = useState(false);
+  const [idCardVerified, setIdCardVerified] = useState(false);
+  const [aiVerificationDetails, setAiVerificationDetails] = useState<any>(null);
 
   // Step state: 'details' -> 'choice' -> 'ranking' -> 'submitted'
   const [step, setStep] = useState<'details' | 'choice' | 'ranking' | 'submitted'>('details');
 
   // Chosen domains and their ranks
-  // Map domainId to rank number (1-based, ties allowed)
   const [domainRanks, setDomainRanks] = useState<Record<DomainId, number>>({} as any);
   const [orderedSelectedIds, setOrderedSelectedIds] = useState<DomainId[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -58,11 +86,132 @@ export default function OnboardingPage() {
     const existing = getStudentInfo();
     if (existing) {
       setName(existing.name || '');
+      if (existing.email) setEmail(existing.email);
       if (existing.department) setDepartment(existing.department);
       if (existing.year) setYear(existing.year);
+      if (existing.semester) setSemester(existing.semester);
       setPhoneNumber(existing.phoneNumber || '');
+      if (existing.isVerified) {
+        if (existing.verificationMethod === 'email_otp') setEmailVerified(true);
+        if (existing.verificationMethod === 'id_card_ai') setIdCardVerified(true);
+      }
     }
   }, []);
+
+  function handleYearChange(newYear: string) {
+    setYear(newYear);
+    if (newYear === '1st Year') setSemester(1);
+    else if (newYear === '2nd Year') setSemester(3);
+    else if (newYear === '3rd Year') setSemester(5);
+    else if (newYear === '4th Year') setSemester(7);
+  }
+
+  async function handleSendOtp() {
+    if (!email.trim() || !email.includes('@')) {
+      setErrorMsg('Please enter a valid college email address.');
+      return;
+    }
+    setErrorMsg('');
+    setSendingOtp(true);
+    try {
+      const res = await fetch('/api/auth/otp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setOtpSent(true);
+        setOtpMessage(data.message);
+        if (data.simulatedOtp) {
+          setSimulatedOtp(data.simulatedOtp);
+        }
+      } else {
+        setErrorMsg(data.error || 'Failed to send OTP.');
+      }
+    } catch {
+      setErrorMsg('Failed to communicate with OTP server.');
+    } finally {
+      setSendingOtp(false);
+    }
+  }
+
+  async function handleVerifyOtp() {
+    if (!otpCode.trim()) {
+      setErrorMsg('Please enter the 6-digit OTP code.');
+      return;
+    }
+    setErrorMsg('');
+    setVerifyingOtp(true);
+    try {
+      const res = await fetch('/api/auth/otp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), otp: otpCode.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setEmailVerified(true);
+        setOtpMessage('✓ College email verified successfully!');
+      } else {
+        setErrorMsg(data.error || 'Invalid OTP code.');
+      }
+    } catch {
+      setErrorMsg('Failed to verify OTP.');
+    } finally {
+      setVerifyingOtp(false);
+    }
+  }
+
+  function handleIdCardImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIdCardFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setIdCardPreview(reader.result as string);
+      setIdCardVerified(false);
+      setAiVerificationDetails(null);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function handleVerifyIdCardWithAi() {
+    if (!idCardPreview) {
+      setErrorMsg('Please upload a photo of your GCECT college ID card first.');
+      return;
+    }
+    setErrorMsg('');
+    setVerifyingIdCard(true);
+    try {
+      const res = await fetch('/api/auth/verify-id-card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: idCardPreview,
+          mimeType: idCardFile?.type || 'image/jpeg',
+        }),
+      });
+      const json = await res.json();
+      if (json.success && json.data) {
+        setAiVerificationDetails(json.data);
+        if (json.data.isGcectCard) {
+          setIdCardVerified(true);
+          if (json.data.detectedName && !name.trim()) {
+            setName(json.data.detectedName);
+          }
+        } else {
+          setErrorMsg(json.data.reasoning || 'Could not verify GCECT ID card. Will be reviewed by admin.');
+        }
+      } else {
+        setErrorMsg('AI verification failed. Admin will review manually.');
+      }
+    } catch {
+      setErrorMsg('Network error verifying ID card. Admin will review manually.');
+    } finally {
+      setVerifyingIdCard(false);
+    }
+  }
 
   function handleDetailsSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -74,26 +223,37 @@ export default function OnboardingPage() {
     setErrorMsg('');
     saveStudentInfo({
       name: name.trim(),
+      email: email.trim() || undefined,
       department,
       year,
+      semester,
       phoneNumber: phoneNumber.trim(),
+      isVerified: verificationMethod === 'email_otp' ? emailVerified : idCardVerified,
+      verificationMethod,
+      idCardUrl: idCardPreview || undefined,
+      idCardAiVerification: aiVerificationDetails || undefined,
     });
 
     setStep('choice');
   }
 
   function handleChooseQuestionnaire() {
-    // Generate a fresh session ID so the questionnaire starts cleanly with 20-25 questions
     if (typeof window !== 'undefined') {
       const freshSessionId = `anon-${crypto.randomUUID()}`;
       localStorage.setItem('byte_what_anon_session_id', freshSessionId);
     }
     saveStudentInfo({
       name: name.trim(),
+      email: email.trim() || undefined,
       department,
       year,
+      semester,
       phoneNumber: phoneNumber.trim(),
       pathChosen: 'questionnaire',
+      isVerified: verificationMethod === 'email_otp' ? emailVerified : idCardVerified,
+      verificationMethod,
+      idCardUrl: idCardPreview || undefined,
+      idCardAiVerification: aiVerificationDetails || undefined,
     });
     router.push('/discover/questionnaire');
   }
@@ -166,16 +326,24 @@ export default function OnboardingPage() {
         rank: domainRanks[domId] !== undefined ? domainRanks[domId] : 20,
       }));
 
+      const isVerified = verificationMethod === 'email_otp' ? emailVerified : idCardVerified;
+
       const res = await fetch('/api/submissions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
+          email: email.trim() || undefined,
           department,
           year,
+          semester,
           phoneNumber: phoneNumber.trim(),
           pathChosen: 'self_selected',
           rankings: rankingsPayload,
+          isVerified,
+          verificationMethod,
+          idCardUrl: idCardPreview || undefined,
+          idCardAiVerification: aiVerificationDetails || undefined,
         }),
       });
 
@@ -227,50 +395,73 @@ export default function OnboardingPage() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Rahul Sharma"
-                  className="w-full bg-[#080D18] border border-white/[0.1] rounded-xl px-4 py-2.5 text-xs text-white placeholder-text-muted focus:outline-none focus:border-primary"
+                  className="w-full bg-[#050811] border border-white/[0.1] rounded-xl px-4 py-2.5 text-xs text-white placeholder-text-muted focus:outline-none focus:border-primary"
                 />
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-text-primary block mb-1.5 flex items-center gap-1.5">
-                  <GraduationCap className="w-3.5 h-3.5 text-accent-cyan" />
-                  <span>Department *</span>
-                </label>
-                <select
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                  className="w-full bg-[#080D18] border border-white/[0.1] rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-primary"
-                >
-                  {DEPARTMENTS.map((dept) => (
-                    <option key={dept} value={dept} className="bg-[#080D18] text-white">
-                      {dept}
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-1">
+                  <label className="text-xs font-semibold text-text-primary block mb-1.5 flex items-center gap-1.5">
+                    <GraduationCap className="w-3.5 h-3.5 text-primary" />
+                    <span>Department / Stream *</span>
+                  </label>
+                  <select
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    className="w-full bg-[#050811] border border-white/[0.1] rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-primary"
+                  >
+                    {DEPARTMENTS.map((dept) => (
+                      <option key={dept} value={dept} className="bg-[#050811] text-white">
+                        {dept}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="sm:col-span-1">
+                  <label className="text-xs font-semibold text-text-primary block mb-1.5 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-accent-violet" />
+                    <span>Academic Year *</span>
+                  </label>
+                  <select
+                    value={year}
+                    onChange={(e) => handleYearChange(e.target.value)}
+                    className="w-full bg-[#050811] border border-white/[0.1] rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-primary"
+                  >
+                    {YEARS.map((y) => (
+                      <option key={y} value={y} className="bg-[#050811] text-white">
+                        {y}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="sm:col-span-1">
+                  <label className="text-xs font-semibold text-text-primary block mb-1.5 flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-accent-cyan" />
+                    <span>Semester *</span>
+                  </label>
+                  <select
+                    value={semester}
+                    onChange={(e) => setSemester(Number(e.target.value))}
+                    className="w-full bg-[#050811] border border-white/[0.1] rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-primary"
+                  >
+                    {SEMESTERS.map((s) => (
+                      <option key={s} value={s} className="bg-[#050811] text-white">
+                        Semester {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-text-primary block mb-1.5 flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-accent-violet" />
-                  <span>Year of Study *</span>
-                </label>
-                <select
-                  value={year}
-                  onChange={(e) => setYear(e.target.value)}
-                  className="w-full bg-[#080D18] border border-white/[0.1] rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-primary"
-                >
-                  {YEARS.map((y) => (
-                    <option key={y} value={y} className="bg-[#080D18] text-white">
-                      {y}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-text-primary block mb-1.5 flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-accent-emerald" />
-                  <span>Phone Number *</span>
+                <label className="text-xs font-semibold text-text-primary block mb-1.5 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-accent-emerald" />
+                    <span>Phone Number *</span>
+                  </span>
+                  <span className="text-[10px] text-accent-cyan font-mono">For Session Alerts</span>
                 </label>
                 <input
                   type="tel"
@@ -278,11 +469,186 @@ export default function OnboardingPage() {
                   value={phoneNumber}
                   onChange={(e) => setPhoneNumber(e.target.value)}
                   placeholder="e.g. +91 98765 43210"
-                  className="w-full bg-[#080D18] border border-white/[0.1] rounded-xl px-4 py-2.5 text-xs text-white placeholder-text-muted focus:outline-none focus:border-primary"
+                  className="w-full bg-[#050811] border border-white/[0.1] rounded-xl px-4 py-2.5 text-xs text-white placeholder-text-muted focus:outline-none focus:border-primary"
                 />
                 <span className="text-[10px] text-text-muted mt-1 block">
-                  Protected with college verification password on the analytics page.
+                  Your phone number will be stored for automated notifications when sessions matching your chosen domains are scheduled.
                 </span>
+              </div>
+
+              {/* Student Verification Section */}
+              <div className="pt-2 border-t border-white/[0.08]">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-primary" />
+                    <span>GCECT Student Verification</span>
+                  </span>
+                  {(emailVerified || idCardVerified) && (
+                    <span className="text-[10px] font-bold text-accent-emerald px-2 py-0.5 rounded bg-accent-emerald/10 border border-accent-emerald/30 flex items-center gap-1">
+                      <Check className="w-3 h-3" />
+                      <span>Verified</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Verification Method Tabs */}
+                <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-white/[0.03] border border-white/[0.06] mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setVerificationMethod('email_otp')}
+                    className={`py-1.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                      verificationMethod === 'email_otp'
+                        ? 'bg-primary text-[#050811] shadow-md shadow-primary/20'
+                        : 'text-text-secondary hover:text-white'
+                    }`}
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    <span>College Email OTP</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setVerificationMethod('id_card_ai')}
+                    className={`py-1.5 px-3 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                      verificationMethod === 'id_card_ai'
+                        ? 'bg-primary text-[#050811] shadow-md shadow-primary/20'
+                        : 'text-text-secondary hover:text-white'
+                    }`}
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>AI College ID Scan</span>
+                  </button>
+                </div>
+
+                {/* Option A: College Email + OTP */}
+                {verificationMethod === 'email_otp' && (
+                  <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-3">
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="e.g. rahul.gcect@gcect.ac.in"
+                        disabled={emailVerified}
+                        className="flex-1 bg-[#050811] border border-white/[0.12] rounded-xl px-3.5 py-2 text-xs text-white placeholder-text-muted focus:outline-none focus:border-primary disabled:opacity-60"
+                      />
+                      {!emailVerified && (
+                        <button
+                          type="button"
+                          onClick={handleSendOtp}
+                          disabled={sendingOtp || !email.trim()}
+                          className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-white/[0.08] hover:bg-white/[0.15] disabled:opacity-40 transition-colors flex items-center justify-center gap-1.5 flex-shrink-0"
+                        >
+                          {sendingOtp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Send OTP'}
+                        </button>
+                      )}
+                    </div>
+
+                    {otpSent && !emailVerified && (
+                      <div className="space-y-2 pt-1 border-t border-white/[0.04]">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            maxLength={6}
+                            value={otpCode}
+                            onChange={(e) => setOtpCode(e.target.value)}
+                            placeholder="Enter 6-digit OTP"
+                            className="w-36 bg-[#050811] border border-primary/30 rounded-xl px-3 py-2 text-xs text-white font-mono tracking-widest text-center focus:outline-none focus:border-primary"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleVerifyOtp}
+                            disabled={verifyingOtp || !otpCode.trim()}
+                            className="px-4 py-2 rounded-xl text-xs font-bold text-[#050811] bg-primary hover:bg-primary-hover disabled:opacity-40 transition-all flex items-center gap-1.5"
+                          >
+                            {verifyingOtp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Confirm Code'}
+                          </button>
+                        </div>
+                        {simulatedOtp && (
+                          <p className="text-[10px] text-accent-cyan">
+                            Test mode OTP code: <span className="font-mono font-bold bg-primary/20 px-1.5 py-0.5 rounded">{simulatedOtp}</span>
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {otpMessage && (
+                      <p className={`text-xs ${emailVerified ? 'text-accent-emerald font-semibold' : 'text-text-secondary'}`}>
+                        {otpMessage}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Option B: Upload College ID Card + AI Vision */}
+                {verificationMethod === 'id_card_ai' && (
+                  <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-3">
+                    <p className="text-xs text-text-secondary leading-relaxed">
+                      Upload or photograph your GCECT College ID card. Our multimodal AI model will verify its authenticity.
+                    </p>
+
+                    <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+                      <label className="cursor-pointer px-4 py-2 rounded-xl bg-white/[0.08] hover:bg-white/[0.12] border border-white/[0.15] text-xs font-bold text-white transition-all flex items-center gap-2">
+                        <Upload className="w-3.5 h-3.5 text-primary" />
+                        <span>Choose ID Card Image</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleIdCardImageChange}
+                          className="hidden"
+                        />
+                      </label>
+
+                      {idCardPreview && !idCardVerified && (
+                        <button
+                          type="button"
+                          onClick={handleVerifyIdCardWithAi}
+                          disabled={verifyingIdCard}
+                          className="px-4 py-2 rounded-xl text-xs font-bold text-[#050811] bg-primary hover:bg-primary-hover disabled:opacity-40 transition-all flex items-center gap-1.5 shadow-md shadow-primary/20"
+                        >
+                          {verifyingIdCard ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Analyzing with AI...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-3.5 h-3.5" />
+                              <span>Verify GCECT Card with AI</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+
+                    {idCardPreview && (
+                      <div className="flex items-center gap-3 pt-2">
+                        <img
+                          src={idCardPreview}
+                          alt="College ID Preview"
+                          className="w-20 h-14 object-cover rounded-lg border border-primary/30"
+                        />
+                        <div className="text-xs">
+                          {idCardVerified ? (
+                            <span className="text-accent-emerald font-bold flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Original GCECT ID Card Verified! ({aiVerificationDetails?.confidence || 90}% confidence)</span>
+                            </span>
+                          ) : (
+                            <span className="text-text-muted">
+                              Card ready for AI verification. Click the button above.
+                            </span>
+                          )}
+                          {aiVerificationDetails?.detectedName && (
+                            <p className="text-[10px] text-text-secondary mt-0.5">
+                              Detected Name: <strong className="text-white">{aiVerificationDetails.detectedName}</strong>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {errorMsg && (
@@ -294,7 +660,7 @@ export default function OnboardingPage() {
               <div className="pt-2">
                 <button
                   type="submit"
-                  className="w-full py-3 rounded-xl font-bold text-white bg-primary hover:bg-primary-hover transition-all text-xs flex items-center justify-center gap-2 shadow-lg shadow-primary/25"
+                  className="w-full py-3.5 rounded-xl font-bold text-[#050811] bg-primary hover:bg-primary-hover transition-all text-xs flex items-center justify-center gap-2 shadow-lg shadow-primary/25"
                 >
                   <span>Continue to Interests</span>
                   <ArrowRight className="w-4 h-4" />
@@ -566,16 +932,23 @@ export default function OnboardingPage() {
             <div className="w-16 h-16 rounded-2xl bg-accent-emerald/20 border border-accent-emerald/30 flex items-center justify-center mx-auto mb-4 text-accent-emerald">
               <Check className="w-8 h-8" />
             </div>
-            <h2 className="text-2xl font-extrabold text-white mb-2">Interests Successfully Registered!</h2>
-            <p className="text-xs text-text-secondary max-w-md mx-auto mb-6 leading-relaxed">
-              Your details and prioritized domains have been recorded. You can now view where you and your peers stand on the college interest map.
+            <h2 className="text-2xl font-extrabold text-white mb-2">Registration Recorded!</h2>
+            <p className="text-xs text-text-secondary max-w-md mx-auto mb-4 leading-relaxed">
+              Your details and domain priorities have been submitted. For collegiate data integrity, your profile is marked for <strong className="text-white">Admin Validation</strong> before being included in the public analytics charts.
             </p>
+            <div className="p-3.5 rounded-2xl bg-primary/10 border border-primary/25 max-w-md mx-auto mb-6 text-left flex items-start gap-3">
+              <Phone className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-white/90">
+                <span className="font-bold text-primary block mb-0.5">Session Automation Registered</span>
+                Your phone number is saved for automated notifications whenever workshops or peer sessions in your selected domains are scheduled.
+              </div>
+            </div>
             <div className="flex justify-center">
               <button
                 onClick={() => router.push('/analytics')}
-                className="px-8 py-3.5 rounded-xl font-bold text-white bg-primary hover:bg-primary-hover transition-all text-sm shadow-lg shadow-primary/25 flex items-center gap-2"
+                className="px-8 py-3.5 rounded-xl font-bold text-[#050811] bg-primary hover:bg-primary-hover transition-all text-sm shadow-lg shadow-primary/25 flex items-center gap-2"
               >
-                <span>View Analytics & Student Submissions</span>
+                <span>View Public Analytics</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>

@@ -296,11 +296,17 @@ export default function QuestionnairePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: studentInfo?.name || 'Anonymous Student',
+          email: studentInfo?.email || undefined,
           department: studentInfo?.department || 'Engineering',
           year: studentInfo?.year || '1st Year',
+          semester: studentInfo?.semester || 1,
           phoneNumber: studentInfo?.phoneNumber || 'N/A',
           pathChosen: 'questionnaire',
           rankings: rankingsPayload,
+          isVerified: studentInfo?.isVerified || false,
+          verificationMethod: studentInfo?.verificationMethod || 'email_otp',
+          idCardUrl: studentInfo?.idCardUrl || undefined,
+          idCardAiVerification: studentInfo?.idCardAiVerification || undefined,
         }),
       });
 

@@ -136,6 +136,76 @@ class GeminiKeyManager {
 
     return null;
   }
+
+  /**
+   * Executes a multimodal vision prompt with an image and automatic key rotation.
+   */
+  public async generateVisionWithRotation(
+    prompt: string,
+    base64Image: string,
+    mimeType: string = 'image/jpeg',
+    modelOverride?: string
+  ): Promise<string | null> {
+    if (this.keys.length === 0) {
+      return null;
+    }
+
+    const modelName = modelOverride || 'gemini-1.5-flash';
+    const maxAttempts = Math.min(this.keys.length, 5);
+
+    // Clean base64 header if present (e.g. data:image/png;base64,...)
+    const cleanBase64 = base64Image.replace(/^data:image\/[a-z]+;base64,/, '');
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const keyState = this.getNextKey();
+      if (!keyState) break;
+
+      try {
+        const client = new GoogleGenAI({ apiKey: keyState.key });
+
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Gemini Vision API call timed out')), 8000)
+        );
+
+        const contentPromise = client.models.generateContent({
+          model: modelName,
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { text: prompt },
+                {
+                  inlineData: {
+                    mimeType: mimeType,
+                    data: cleanBase64,
+                  },
+                },
+              ],
+            },
+          ],
+        });
+
+        const response = await Promise.race([contentPromise, timeoutPromise]);
+
+        if (response && response.text) {
+          keyState.failureCount = 0;
+          return response.text;
+        }
+      } catch (err: any) {
+        const errMsg = String(err?.message || err);
+        const isQuota = errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('quota');
+
+        if (isQuota) {
+          this.markKeyCooling(keyState, 60000);
+        } else {
+          keyState.failureCount += 1;
+          console.warn(`[GeminiKeyManager] Vision error with key ...${keyState.key.slice(-6)}:`, errMsg);
+        }
+      }
+    }
+
+    return null;
+  }
 }
 
 export const geminiPool = new GeminiKeyManager();

@@ -1,9 +1,21 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { Repository } from '@/lib/supabase/repository';
 
-export async function GET() {
+export const dynamic = 'force-dynamic';
+
+export async function GET(req: NextRequest) {
   try {
-    const analytics = await Repository.getAnalytics();
+    const { searchParams } = new URL(req.url);
+    const department = searchParams.get('department') || undefined;
+    const year = searchParams.get('year') || undefined;
+    const semester = searchParams.get('semester') || undefined;
+
+    const analytics = await Repository.getAnalytics({
+      department,
+      year,
+      semester,
+    });
+
     return NextResponse.json({
       success: true,
       data: analytics,

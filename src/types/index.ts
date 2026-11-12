@@ -114,11 +114,36 @@ export interface StudentDomainRank {
 export interface StudentSubmission {
   id: string;
   name: string;
+  email?: string;
   department: string;
   year: string;
+  semester: number; // 1 to 8
   phoneNumber: string;
   pathChosen: 'self_selected' | 'questionnaire';
   rankings: StudentDomainRank[];
+  isVerified?: boolean;
+  verificationMethod?: 'email_otp' | 'id_card_ai' | 'oauth';
+  idCardUrl?: string;
+  idCardAiVerification?: {
+    isGcectCard: boolean;
+    confidence: number;
+    detectedName?: string | null;
+    detectedRoll?: string | null;
+    detectedDept?: string | null;
+    detectedYear?: string | null;
+    reasoning?: string;
+  };
+  isValid: boolean; // Must be approved by admin to appear in public statistics & graphs
+  adminNotes?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface AdminUser {
+  id: string;
+  username: string;
+  email: string;
+  role: 'super_admin' | 'moderator';
   createdAt: string;
 }
 

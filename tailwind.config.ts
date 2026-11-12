@@ -10,19 +10,20 @@ const config: Config = {
     extend: {
       colors: {
         background: {
-          DEFAULT: "#080D18",
-          secondary: "#0B1220",
-          card: "#111827",
-          cardHover: "#1E293B",
+          DEFAULT: "#050811",
+          secondary: "#080E1D",
+          card: "#0D1528",
+          cardHover: "#131F38",
         },
         primary: {
-          DEFAULT: "#3B82F6",
-          hover: "#2563EB",
-          light: "#60A5FA",
+          DEFAULT: "#00F0FF",
+          hover: "#00D2DF",
+          light: "#38F8FF",
+          dark: "#0891B2",
         },
         accent: {
           violet: "#8B5CF6",
-          cyan: "#06B6D4",
+          cyan: "#00F0FF",
           emerald: "#10B981",
           amber: "#F59E0B",
           rose: "#F43F5E",
@@ -33,9 +34,9 @@ const config: Config = {
           muted: "#64748B",
         },
         border: {
-          DEFAULT: "rgba(255, 255, 255, 0.08)",
-          subtle: "rgba(255, 255, 255, 0.05)",
-          focus: "rgba(59, 130, 246, 0.5)",
+          DEFAULT: "rgba(0, 240, 255, 0.12)",
+          subtle: "rgba(255, 255, 255, 0.06)",
+          focus: "rgba(0, 240, 255, 0.5)",
         },
       },
       fontFamily: {
